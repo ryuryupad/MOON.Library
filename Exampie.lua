@@ -2,7 +2,7 @@
 -- ║          使用例  LocalScript  (v2.0)                 ║
 -- ╚══════════════════════════════════════════════════════╝
 
-local Library = loadstring(game:HttpGet("https://github.com/ryuryupad/MOON.Library/blob/main/Library.lua"))()
+local Library = loadstring(game:HttpGet("https://github.com/ryuryupad/MOON.Library/blob/main/Library.lua/raw"))()
 
 -- ─── KEYシステム オン の例 ───────────────────────────
 local Window = Library:CreateWindow({
