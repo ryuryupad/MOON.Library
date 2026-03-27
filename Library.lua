@@ -383,25 +383,33 @@ function Library:CreateWindow(config)
         local SIDEBAR_W    = 148
         local TOPBAR_H     = 50
 
-local main = make("Frame", {
-    Name="MainFrame",
-    Size=UDim2.new(0, WIN_W, 0, 0), -- 初期は0（アニメ用）
-    Position=UDim2.new(0.5, -WIN_W/2, 0.5, -WIN_H/2),
-    BackgroundColor3=T.BG_MAIN,
-    BorderSizePixel=0,
-    -- ⚡️ ポイント1: 常にONにする
-    ClipsDescendants = true,
-}, gui)
+-- 1. メインウィンドウ
+        local main = make("Frame", {
+            Name="MainFrame",
+            Size=UDim2.new(0, WIN_W, 0, 0),
+            Position=UDim2.new(0.5, -WIN_W/2, 0.5, -WIN_H/2),
+            BackgroundColor3=T.BG_MAIN,
+            BorderSizePixel=0,
+            ClipsDescendants=true, -- アニメーション中の中身隠し
+        }, gui)
+        corner(12, main) -- 親の角丸
+        local stroke = uiStroke(T.BORDER, 1, main)
+        stroke.LineJoinMode = Enum.LineJoinMode.Round -- 枠線の角も丸くする
 
--- ⚡️ ポイント2: UICorner を変数に取る（必要なら）
-corner(12, main)
+        -- 2. トップバー (ここが犯人だ)
+        local topbar = make("Frame", {
+            Name="TopBar",
+            Size=UDim2.new(1, 0, 0, TOPBAR_H),
+            BackgroundColor3=T.BG_TOP,
+            BorderSizePixel=0,
+            Parent = main,
+        })
+        -- ★重要：トップバーにも同じ半径の角丸を入れる
+        corner(12, topbar) 
 
--- ⚡️ ポイント3: UIStroke の設定を見直す
-local stroke = uiStroke(T.BORDER, 1, main)
--- Strokeが角を突き破るのを防ぐ設定
-stroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
-stroke.LineJoinMode = Enum.LineJoinMode.Round -- 角を丸く接続
-
+        -- ★重要：トップバーの「下の角」の尖りを目立たせないために、
+        -- 少しだけ（2pxくらい）下に伸ばしたダミーの背景を敷くか、
+        -- そのままにする。上の角が丸まれば、画像の問題は解決する。
         -- 開くアニメ
         twWait(main, { Size=UDim2.new(0,WIN_W,0,WIN_H) }, TW_SLOW)
 
