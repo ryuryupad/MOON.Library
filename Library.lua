@@ -383,15 +383,24 @@ function Library:CreateWindow(config)
         local SIDEBAR_W    = 148
         local TOPBAR_H     = 50
 
-        local main = make("Frame", {
-            Name="MainFrame",
-            Size=UDim2.new(0, WIN_W, 0, 0),
-            Position=UDim2.new(0.5,-WIN_W/2, 0.5,-WIN_H/2),
-            BackgroundColor3=T.BG_MAIN,
-            BorderSizePixel=0, ClipsDescendants=true,
-        }, gui)
-        corner(12, main)
-        uiStroke(T.BORDER, 1, main)
+local main = make("Frame", {
+    Name="MainFrame",
+    Size=UDim2.new(0, WIN_W, 0, 0), -- 初期は0（アニメ用）
+    Position=UDim2.new(0.5, -WIN_W/2, 0.5, -WIN_H/2),
+    BackgroundColor3=T.BG_MAIN,
+    BorderSizePixel=0,
+    -- ⚡️ ポイント1: 常にONにする
+    ClipsDescendants = true,
+}, gui)
+
+-- ⚡️ ポイント2: UICorner を変数に取る（必要なら）
+corner(12, main)
+
+-- ⚡️ ポイント3: UIStroke の設定を見直す
+local stroke = uiStroke(T.BORDER, 1, main)
+-- Strokeが角を突き破るのを防ぐ設定
+stroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
+stroke.LineJoinMode = Enum.LineJoinMode.Round -- 角を丸く接続
 
         -- 開くアニメ
         twWait(main, { Size=UDim2.new(0,WIN_W,0,WIN_H) }, TW_SLOW)
