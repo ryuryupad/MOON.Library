@@ -547,25 +547,57 @@ function Library:CreateWindow(config)
         end
 
         -- ── サイドバー ──────────────────────
+-- ── サイドバー ──────────────────────
         local sidebar = make("Frame", {
             Size=UDim2.new(0,SIDEBAR_W,1,-TOPBAR_H),
             Position=UDim2.new(0,0,0,TOPBAR_H),
             BackgroundColor3=T.BG_SIDEBAR, BorderSizePixel=0, ZIndex=2,
         }, main)
+        corner(12, sidebar) -- 下の角丸対策
+
+        -- 境界線（ここも Size を微調整して突き抜け防止）
         make("Frame", {
-            Size=UDim2.new(0,1,1,0), Position=UDim2.new(1,-1,0,0),
+            Size=UDim2.new(0,1,1,-12), 
+            Position=UDim2.new(1,-1,0,0),
             BackgroundColor3=T.BORDER, BorderSizePixel=0, ZIndex=3,
         }, sidebar)
 
+        -- タブを並べるためのスクロールエリア
         local sideScroll = make("ScrollingFrame", {
             Size=UDim2.new(1,0,1,0), BackgroundTransparency=1, BorderSizePixel=0,
             ScrollBarThickness=0, CanvasSize=UDim2.new(0,0,0,0),
             AutomaticCanvasSize=Enum.AutomaticSize.Y,
         }, sidebar)
-        make("UIListLayout", { SortOrder=Enum.SortOrder.LayoutOrder, Padding=UDim.new(0,3) }, sideScroll)
-        pad(10,10,0,0, sideScroll)
+        
+        -- レイアウト設定
+        make("UIListLayout", { 
+            SortOrder=Enum.SortOrder.LayoutOrder, 
+            Padding=UDim.new(0,3) 
+        }, sideScroll)
+        
+        -- 余白設定
+        pad(10,10,10,0, sideScroll)
 
-        -- ── コンテンツエリア ────────────────
+        -- ── 【ここが抜けてた「中間」だ】 ────────────────
+        -- ウィンドウ移動のドラッグロジック（ここに入れるのが一般的）
+        local dragging, dragInput, dragStart, startPos
+        local function update(input)
+            local delta = input.Position - dragStart
+            main.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
+        end
+
+        topbar.InputBegan:Connect(function(input)
+            if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+                dragging = true
+                dragStart = input.Position
+                startPos = main.Position
+                input.Changed:Connect(function()
+                    if input.UserInputState == Enum.UserInputState.End then dragging = false end
+                end)
+            end
+        end)
+
+ -- ── コンテンツエリア ────────────────
         -- DropdownがUIの外に出られるようZIndexBehavior=Globalのフレームを使う
         local contentArea = make("Frame", {
             Size=UDim2.new(1,-SIDEBAR_W,1,-TOPBAR_H),
@@ -574,6 +606,12 @@ function Library:CreateWindow(config)
             ClipsDescendants=false,   -- Dropdown表示のためfalse
         }, main)
 
+        -- ⚡️ ここを追加：コンテンツエリア自体にも角丸を入れる
+        corner(12, contentArea) 
+
+        -- ⚡️ サイドバー（もしあれば）にも同じように追加しろ
+        -- sidebar の作成箇所にも corner(12, sidebar) を入れるんだ
+        
         -- キーバインドトグル
         local visible = true
         UserInputService.InputBegan:Connect(function(i, gpe)
