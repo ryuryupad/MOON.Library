@@ -1,91 +1,114 @@
--- ╔══════════════════════════════════════════════════════╗
--- ║          使用例  LocalScript  (v2.0)                 ║
--- ╚══════════════════════════════════════════════════════╝
+-- [[ MOON UI v2.1: Astralis Edition Example ]] --
+local Players = game:GetService("Players")
+local LocalPlayer = Players.LocalPlayer
 
+-- 1. ライブラリの読み込み
 local success, Library = pcall(function()
+    -- リポジトリから最新を読み込む
     return loadstring(game:HttpGet("https://raw.githubusercontent.com/ryuryupad/MOON.Library/main/Library.lua"))()
 end)
 
 if not success or not Library then
-    warn("MOON UI: ライブラリの読み込みに失敗しました。")
+    warn("MOON UI: Fatal Error - Could not load library.")
     return
 end
+
+-- 2. 認証用データの動的生成 (Astralis v6 互換)
+local HWID = gethwid and gethwid() or game:GetService("RbxAnalyticsService"):GetClientId()
+local DATE = os.date("!%Y%m%d") -- UTC日付でJS側と同期
+local SALT = "xxxxxxxxxxx"
+
+-- 本来はここで correctKey を計算するロジックを入れる（前述の generateHash 関数を使用）
+local correctKey = "KOHUB-TEST-KEY-2026" -- 実際には計算した値をここに入れる(固定キーなど）
+
+-- 3. ウィンドウ作成
 local Window = Library:CreateWindow({
-    Title    = "MOON UI",
-    Subtitle = "v2.1  •  by yourname",
-    Color    = Color3.fromRGB(80, 160, 255),
+    Title    = "ASTRALIS",
+    Subtitle = "v6.0  •  by ryuryupad",
+    Color    = Color3.fromRGB(80, 160, 255), -- ブルー
     Keybind  = Enum.KeyCode.RightShift,
     Neon     = true,
 
     KeySystem = {
-        Enabled = false,                    -- true でキー認証ON
-        Key     = "MOON-2024-ULTRA",
-        -- KeyList = "https://pastebin.com/raw/XXXXX",
-        Title   = "MOON UI  •  Key Required",
-        Hint    = "Discordサーバーでキーを入手してください",
+        Enabled   = true, -- 認証を有効化
+        Key       = correctKey,
+        Title     = "ASTRALIS AUTHENTICATION",
+        -- 改造したライブラリなら、ここに入れるだけでボタンが出る
+        GetKeyURL = "https://ｘｘｘｘｘｘｘｘｘｘｘｘｘｘ",
+        Hint      = "Get Keyを押すとリンクがコピーされます。",
     },
 })
 
-local MainTab   = Window:CreateTab("Main",     "⚡")
-local CombatTab = Window:CreateTab("Combat",   "⚔")
-local SettingsTab = Window:CreateTab("Settings","⚙")
+-- ── タブ作成 ──────────────────────────────
+local MainTab     = Window:CreateTab("Main",     "⚡")
+local CombatTab   = Window:CreateTab("Combat",   "⚔")
+local SettingsTab = Window:CreateTab("Settings", "⚙")
 
--- ── Main ──────────────────────────────────
-MainTab:Separator("Movement")
+-- ── Main Tab (Movement & Essentials) ──────
+MainTab:Separator("MOVEMENT BOOST")
 
-MainTab:Toggle("Infinite Jump", false, function(v)
-    -- 処理
-end, "空中でもジャンプできます")
-
--- ★ Sliderは {min=N, max=N} 形式で指定
 MainTab:Slider("Walk Speed", { min=16, max=250 }, function(v)
-    local c = game.Players.LocalPlayer.Character
-    if c then c.Humanoid.WalkSpeed = v end
-end, "移動速度")
+    local char = LocalPlayer.Character
+    if char and char:FindFirstChild("Humanoid") then
+        char.Humanoid.WalkSpeed = v
+    end
+end, "キャラクターの移動速度を変更します")
 
 MainTab:Slider("Jump Power", { min=50, max=400 }, function(v)
-    local c = game.Players.LocalPlayer.Character
-    if c then c.Humanoid.JumpPower = v end
-end, "ジャンプ力")
+    local char = LocalPlayer.Character
+    if char and char:FindFirstChild("Humanoid") then
+        char.Humanoid.UseJumpPower = true
+        char.Humanoid.JumpPower = v
+    end
+end, "ジャンプ力を変更します")
 
-MainTab:Separator("Misc")
+MainTab:Toggle("Infinite Jump", false, function(v)
+    _G.InfJump = v
+    game:GetService("UserInputService").JumpRequest:Connect(function()
+        if _G.InfJump then
+            LocalPlayer.Character:FindFirstChildOfClass("Humanoid"):ChangeState("Jumping")
+        end
+    end)
+end, "空中で無限にジャンプを可能にします")
 
-MainTab:Dropdown("Select Server", {"Asia","EU","NA","SA"}, function(v)
-    print("Server:", v)
-end, "サーバー選択")
-
-MainTab:Accordion("Changelogs", {
-    "v2.1: Dropdown/Sliderバグ修正",
-    "v2.0: 起動アニメ・KEYシステム追加",
-    "v1.0: 初回リリース",
-})
+MainTab:Separator("WORLD")
 
 MainTab:Button("Teleport to Spawn", function()
-    local c = game.Players.LocalPlayer.Character
-    if c then c:MoveTo(Vector3.new(0,5,0)) end
+    if LocalPlayer.Character then
+        LocalPlayer.Character:MoveTo(Vector3.new(0, 10, 0))
+    end
 end)
 
--- ── Combat ────────────────────────────────
-CombatTab:Separator("Aimbot")
+-- ── Combat Tab (Aimbot & Visuals) ─────────
+CombatTab:Separator("AIM ASSIST")
 
-CombatTab:Toggle("Aimbot", false, function(v) end)
+CombatTab:Toggle("Aimbot Enable", false, function(v)
+    print("Aimbot Status:", v)
+end)
 
-CombatTab:Slider("FOV", { min=10, max=360 }, function(v)
-    print("FOV:", v)
-end, "エイムFOV範囲")
+CombatTab:Slider("Aimbot FOV", { min=10, max=600 }, function(v)
+    -- FOV描画の更新処理など
+end, "エイムが吸い付く範囲(円)のサイズ")
 
-CombatTab:Dropdown("Target Part",
-    {"Head","Torso","HumanoidRootPart"},
-    function(v) print("Part:", v) end
-)
+CombatTab:Dropdown("Target Priority", {"Head", "Torso", "HumanoidRootPart"}, function(v)
+    print("Targeting:", v)
+end, "優先的に狙う部位を選択")
 
--- ── Settings ──────────────────────────────
-SettingsTab:Toggle("Show Notifications", true, function(v) end)
+-- ── Settings Tab (UI Customization) ───────
+SettingsTab:Separator("SYSTEM")
 
-SettingsTab:Slider("UI Scale", { min=50, max=150 }, function(v)
-    print("Scale:", v)
-end, "UIの拡大縮小")
+SettingsTab:Accordion("Astralis v6 Changelogs", {
+    "v6.0: 3層複合認証システム (UTC同期) 実装",
+    "v6.0: MOON UI v2.1 へのアップグレード",
+    "v6.0: JSFiddle連動型自動キー発行システム採用",
+})
 
-SettingsTab:Button("Unload UI", function()
-    game.Players.LocalPlayer.PlayerGui.ryu_ui:Destroy()
+SettingsTab:Button("Copy HWID", function()
+    setclipboard(HWID)
+    -- ここでライブラリの通知機能があれば呼ぶ
+end)
+
+SettingsTab:Button("Destroy UI", function()
+    local ui = PlayerGui:FindFirstChild("MOON_UI") or PlayerGui:FindFirstChild("ryu_ui")
+    if ui then ui:Destroy() end
 end)
