@@ -470,13 +470,18 @@ function Library:CreateWindow(config)
         }, btnArea)
         minimizeBtn.MouseEnter:Connect(function() tw(minimizeBtn,{TextColor3=Color3.fromRGB(254,188,46)}) end)
         minimizeBtn.MouseLeave:Connect(function() tw(minimizeBtn,{TextColor3=T.TEXT_M}) end)
+        -- 最小化ボタンの挙動修正
         minimizeBtn.MouseButton1Click:Connect(function()
             minimized = not minimized
             if minimized then
-                -- トップバーだけ残してコンテンツを隠す
-                twWait(main, { Size=UDim2.new(0,WIN_W,0,TOPBAR_H) }, TW_MED)
+                -- ⚡️ 小さくする時は、まず中身をはみ出さないように設定
+                main.ClipsDescendants = true 
+                twWait(main, { Size = UDim2.new(0, WIN_W, 0, TOPBAR_H) }, TW_MED)
             else
-                twWait(main, { Size=UDim2.new(0,WIN_W,0,WIN_H) }, TW_MED)
+                -- ⚡️ 大きく戻すアニメーションを開始
+                twWait(main, { Size = UDim2.new(0, WIN_W, 0, WIN_H) }, TW_MED)
+                -- ★ 完全に開ききった「後」で、切り取りをオフにする（これで角が綺麗に残る）
+                main.ClipsDescendants = false 
             end
         end)
 
@@ -487,10 +492,14 @@ function Library:CreateWindow(config)
             Size=UDim2.new(0,28,1,0), Position=UDim2.new(0,30,0,0),
             AutoButtonColor=false, ZIndex=5,
         }, btnArea)
+
         closeBtn.MouseEnter:Connect(function() tw(closeBtn,{TextColor3=Color3.fromRGB(255,95,87)}) end)
         closeBtn.MouseLeave:Connect(function() tw(closeBtn,{TextColor3=T.TEXT_M}) end)
+
         closeBtn.MouseButton1Click:Connect(function()
-            twWait(main, { Size=UDim2.new(0,WIN_W,0,0) }, TW_MED)
+            -- 閉じる時もClipを有効にして、シュッと消えるようにする
+            main.ClipsDescendants = true
+            twWait(main, { Size = UDim2.new(0, WIN_W, 0, 0), BackgroundTransparency = 1 }, TW_MED)
             gui:Destroy()
         end)
 
@@ -738,10 +747,9 @@ function Library:CreateWindow(config)
             end
 
             -- ─────────────────────────────
-            --  Slider  ★ {min=N, max=N} 形式
+            --  Slider (操作感改善版)
             -- ─────────────────────────────
             function Tab:Slider(name, range, callback, desc)
-                -- {min=16, max=200} または {16, 200} 両対応
                 local minVal = range.min or range[1] or 0
                 local maxVal = range.max or range[2] or 100
                 local value  = minVal
@@ -753,7 +761,7 @@ function Library:CreateWindow(config)
                 make("TextLabel", {
                     Text=name, TextSize=13, Font=Enum.Font.GothamBold,
                     TextColor3=T.TEXT_P, BackgroundTransparency=1,
-                    Size=UDim2.new(0.65,0,0,20), Position=UDim2.new(0,0,0,6),
+                    Size=UDim2.new(0.65,0,0,20), Position=UDim2.new(0,10,0,6), -- 少し左にパディング
                     TextXAlignment=Enum.TextXAlignment.Left,
                 }, w)
 
@@ -762,29 +770,13 @@ function Library:CreateWindow(config)
                     Text=tostring(minVal),
                     TextSize=12, Font=Enum.Font.GothamBold,
                     TextColor3=T.ACCENT_TEXT, BackgroundTransparency=1,
-                    Size=UDim2.new(0.35,0,0,20), Position=UDim2.new(0.65,0,0,6),
-                    TextXAlignment=Enum.TextXAlignment.Right,
-                }, w)
-
-                -- min/max 表示
-                make("TextLabel", {
-                    Text=tostring(minVal),
-                    TextSize=9, Font=Enum.Font.Gotham,
-                    TextColor3=T.TEXT_M, BackgroundTransparency=1,
-                    Size=UDim2.new(0,30,0,12), Position=UDim2.new(0,0,0,50),
-                    TextXAlignment=Enum.TextXAlignment.Left,
-                }, w)
-                make("TextLabel", {
-                    Text=tostring(maxVal),
-                    TextSize=9, Font=Enum.Font.Gotham,
-                    TextColor3=T.TEXT_M, BackgroundTransparency=1,
-                    Size=UDim2.new(0,30,0,12), Position=UDim2.new(1,-30,0,50),
+                    Size=UDim2.new(0.35,0,0,20), Position=UDim2.new(0.65,-10,0,6),
                     TextXAlignment=Enum.TextXAlignment.Right,
                 }, w)
 
                 -- トラック
                 local track = make("Frame", {
-                    Size=UDim2.new(1,0,0,5), Position=UDim2.new(0,0,0,36),
+                    Size=UDim2.new(1,-20,0,5), Position=UDim2.new(0,10,0,36),
                     BackgroundColor3=T.BORDER, BorderSizePixel=0,
                 }, w)
                 corner(3, track)
@@ -796,15 +788,17 @@ function Library:CreateWindow(config)
                 corner(3, fill)
 
                 local knob = make("Frame", {
-                    Size=UDim2.new(0,14,0,14), Position=UDim2.new(1,-7,0.5,-7),
+                    Size=UDim2.new(0,14,0,14), 
+                    -- Knobの親をtrackに変えるか、計算を合わせる
+                    Position=UDim2.new(0,-7,0.5,-7),
                     BackgroundColor3=T.TEXT_P, BorderSizePixel=0,
-                }, fill)
+                    ZIndex = 5,
+                }, track)
                 corner(7, knob)
                 uiStroke(T.ACCENT, 1.5, knob)
 
                 makeDesc(desc, w)
 
-                -- ★ドラッグ処理（AbsolutePosition使用・フレーム更新待ち）
                 local dragging = false
 
                 local function updateByX(absX)
@@ -813,25 +807,28 @@ function Library:CreateWindow(config)
                     if tSize <= 0 then return end
                     local ratio = math.clamp((absX - tPos) / tSize, 0, 1)
                     value = math.round(minVal + (maxVal - minVal) * ratio)
+                    
                     valLbl.Text = tostring(value)
                     fill.Size   = UDim2.new(ratio, 0, 1, 0)
+                    knob.Position = UDim2.new(ratio, -7, 0.5, -7) -- Knobの位置を直接制御
+                    
                     if callback then callback(value) end
                 end
 
-                -- クリック開始
-                track.InputBegan:Connect(function(i)
+                -- ★判定を w (66ピクセルの高さ全体) に変更！
+                w.InputBegan:Connect(function(i)
                     if i.UserInputType == Enum.UserInputType.MouseButton1 then
                         dragging = true
                         updateByX(i.Position.X)
                     end
                 end)
-                -- ドラッグ中
+
                 UserInputService.InputChanged:Connect(function(i)
                     if dragging and i.UserInputType == Enum.UserInputType.MouseMovement then
                         updateByX(i.Position.X)
                     end
                 end)
-                -- 離す
+
                 UserInputService.InputEnded:Connect(function(i)
                     if i.UserInputType == Enum.UserInputType.MouseButton1 then
                         dragging = false
@@ -841,7 +838,7 @@ function Library:CreateWindow(config)
                 w.MouseEnter:Connect(function() tw(w,{BackgroundColor3=T.BG_ELEMENT_H}) end)
                 w.MouseLeave:Connect(function() tw(w,{BackgroundColor3=T.BG_ELEMENT}) end)
             end
-
+            
             -- ─────────────────────────────
             --  Button
             -- ─────────────────────────────
