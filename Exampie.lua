@@ -2,7 +2,14 @@
 -- ║          使用例  LocalScript  (v2.0)                 ║
 -- ╚══════════════════════════════════════════════════════╝
 
-local Library = loadstring(game:HttpGet("https://raw.githubusercontent.com/ryuryupad/MOON.Library/main/Library.lua"))()
+local success, Library = pcall(function()
+    return loadstring(game:HttpGet("https://raw.githubusercontent.com/ryuryupad/MOON.Library/main/Library.lua"))()
+end)
+
+if not success or not Library then
+    warn("MOON UI: ライブラリの読み込みに失敗しました。")
+    return
+end
 
 local Window = Library:CreateWindow({
     Title    = "MOON UI",
