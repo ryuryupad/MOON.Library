@@ -149,24 +149,39 @@ function Library:CreateWindow(config)
     -- config.Border = { Type="gradient", Colors={c1,c2} } or { Type="rainbow" } or nil(通常)
     local BorderCfg  = config.Border or { Type = "solid" }
 
-    -- テーマ
+  -- ── テーマ (ここを書き換え) ──────────────────────
     local T = {
-        BG_MAIN      = rgb(5,  14, 26),
-        BG_TOPBAR    = rgb(8,  18, 32),
-        BG_SIDEBAR   = rgb(6,  15, 28),
-        BG_CONTENT   = rgb(4,  11, 22),
-        BG_ELEMENT   = rgb(10, 22, 38),
-        BG_ELEMENT_H = rgb(16, 32, 54),
+        -- 背景色シリーズ：config から取得、なければデフォルト
+        BG_MAIN      = config.BackgroundColor or rgb(5, 14, 26),
+        BG_TOPBAR    = config.TopbarColor      or rgb(8, 18, 32),
+        BG_SIDEBAR   = config.SidebarColor     or rgb(6, 15, 28),
+        BG_CONTENT   = config.ContentColor     or rgb(4, 11, 22),
+        BG_ELEMENT   = config.ElementColor     or rgb(10, 22, 38),
+        BG_ELEMENT_H = config.ElementHoverColor or rgb(16, 32, 54),
+        
         BORDER       = rgb(28, 46, 72),
         TEXT_P       = rgb(210, 220, 235),
         TEXT_S       = rgb(110, 130, 160),
-        TEXT_M       = rgb(55,  75, 105),
+        TEXT_M       = rgb(55, 75, 105),
+        
         ACCENT       = Accent,
         ACCENT_DIM   = dimColor(Accent, 0.22),
         ACCENT_TEXT  = lightenColor(Accent, 0.35),
-        STATUS_GREEN = rgb(40,  200, 100),
-        STATUS_RED   = rgb(220,  60,  60),
+        
+        STATUS_GREEN = rgb(40, 200, 100),
+        STATUS_RED   = rgb(220, 60, 60),
     }
+
+    local gui = make("ScreenGui", {
+        Name = "moon_ui", ResetOnSpawn = false,
+        ZIndexBehavior = Enum.ZIndexBehavior.Sibling,
+        IgnoreGuiInset = true,
+        DisplayOrder = 10,
+    }, PlayerGui)
+
+    -- ══════════════════════════════
+    --  Notify システム (右下トースト)
+    -- ══════════════════════════════
 
     local gui = make("ScreenGui", {
         Name = "moon_ui", ResetOnSpawn = false,
