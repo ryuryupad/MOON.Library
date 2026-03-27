@@ -1,5 +1,7 @@
 -- [[ MOON UI v3.0: Astralis Edition Example ]] --
 -- Developer: ryuryupad
+-- Version: 6.0 (Refined with Amber-Black Theme)
+
 local Players          = game:GetService("Players")
 local UserInputService = game:GetService("UserInputService")
 local LocalPlayer      = Players.LocalPlayer
@@ -16,38 +18,43 @@ if not success or not Library then
     return
 end
 
--- ── 2. 固定キー ──────────────────────────────────
+-- ── 2. 固定キー / HWID ──────────────────────────
 local HWID       = gethwid and gethwid()
                    or game:GetService("RbxAnalyticsService"):GetClientId()
 local correctKey = "KOHUB-TEST-KEY-2026"
 
--- ── 3. ウィンドウ作成 (最新テーマ機能適用) ────────────────────
+-- ── 3. ウィンドウ作成 (ASTRALIS 琥珀×漆黒カスタム) ───────────
+-- ここで設定した色が、起動アニメーションからキー認証まですべてに連動する
 local Window = Library:CreateWindow({
     Title    = "ASTRALIS",
     Subtitle = "v6.0  •  by ryuryupad",
-    Color    = Color3.fromRGB(80, 160, 255),
+    
+    -- 【THEME: 琥珀 (Accent) & 漆黒 (Base)】
+    Accent          = Color3.fromRGB(255, 170, 0),    -- 琥珀色
+    BackgroundColor = Color3.fromRGB(5, 14, 26),     -- メイン背景 (漆黒)
+    TopbarColor     = Color3.fromRGB(8, 18, 32),     -- トップバー
+    SidebarColor    = Color3.fromRGB(6, 15, 28),     -- サイドバー
+    ContentColor    = Color3.fromRGB(4, 11, 22),     -- コンテンツエリア
+    ElementColor    = Color3.fromRGB(10, 22, 38),    -- ボタン・スライダー等の背景
+    
     Keybind  = Enum.KeyCode.RightShift,
     Neon     = true,
 
-    -- 【NEW: テーマカスタマイズ】
-    -- 汎用ライブラリとして、ここで色を自由に変えられるようになったぜ
-    BackgroundColor = Color3.fromRGB(5, 14, 26),    -- メイン背景
-    TopbarColor      = Color3.fromRGB(8, 18, 32),    -- トップバー
-    SidebarColor     = Color3.fromRGB(6, 15, 28),    -- サイドバー
-    ContentColor     = Color3.fromRGB(4, 11, 22),    -- コンテンツエリア
-    ElementColor     = Color3.fromRGB(10, 22, 38),   -- ボタン等の背景
-
-    -- グラデーション枠 (虹色をやめたい場合は Type = "none" にする)
+    -- グラデーション枠 (Astralisの硬派な印象を出すなら none または固定色)
     Border = { Type = "none" }, 
 
-    -- 左下ユーザーパネル (任意)
-    UserPanel = { Enabled = true, Role = "Owner & Developer" },
+    -- 左下ユーザーパネル
+    UserPanel = { 
+        Enabled = true, 
+        Role = "Owner & Developer" 
+    },
 
+    -- 【KEY SYSTEM: 起動アニメ後に自動実行】
     KeySystem = {
         Enabled   = true,
         Key       = correctKey,
         Title     = "ASTRALIS AUTHENTICATION",
-        GetKeyURL = "https://xxxxxxxxxxxxxxxx",
+        GetKeyURL = "https://discord.gg/xxxxxxxx", -- キー取得先
         Hint      = "Get Keyを押すとリンクがコピーされます。",
     },
 })
@@ -57,8 +64,7 @@ local MainTab     = Window:CreateTab("Main",     "⚡")
 local CombatTab   = Window:CreateTab("Combat",   "⚔")
 local SettingsTab = Window:CreateTab("Settings", "⚙")
 
--- ══ Main Tab ══════════════════════════════════════
-
+-- ══ Main Tab: Movement & World ══════════════════════
 MainTab:Separator("MOVEMENT BOOST")
 
 MainTab:Slider("Walk Speed", { min=16, max=250 }, function(v)
@@ -99,11 +105,10 @@ MainTab:Button("Teleport to Spawn", function()
     if LocalPlayer.Character then
         LocalPlayer.Character:MoveTo(Vector3.new(0, 10, 0))
     end
-    MainTab:Notify("テレポート", "スポーンに移動しました", 2)
+    Window:Notify("Teleport", "スポーンに移動しました", 2)
 end)
 
--- ══ Combat Tab ════════════════════════════════════
-
+-- ══ Combat Tab: Aim Assist ════════════════════════
 CombatTab:Separator("AIM ASSIST")
 
 CombatTab:Toggle("Aimbot Enable", false, function(v)
@@ -111,29 +116,28 @@ CombatTab:Toggle("Aimbot Enable", false, function(v)
 end)
 
 CombatTab:Slider("Aimbot FOV", { min=10, max=600 }, function(v)
-    -- FOV描画の更新処理
+    -- FOV描画の更新ロジックをここに
 end, "エイムが吸い付く範囲(円)のサイズ")
 
 CombatTab:Dropdown("Target Priority", {"Head", "Torso", "HumanoidRootPart"}, function(v)
     print("Targeting:", v)
 end, "優先的に狙う部位を選択")
 
--- ══ Settings Tab ══════════════════════════════════
-
+-- ══ Settings Tab: System ══════════════════════════
 SettingsTab:Separator("SYSTEM")
 
 SettingsTab:Accordion("Astralis v6 Changelogs", {
     "v6.0: MOON UI v3.0 へのアップグレード",
-    "v6.0: 背景色・各パーツカラーの外部指定に対応", -- 追加
+    "v6.0: 起動アニメーションの漆黒×琥珀連動",
+    "v6.0: キー認証システムの色化け修正済",
     "v6.0: ColorPicker / Notify / Input 追加",
-    "v6.0: グラデーション・虹色枠対応",
-    "v6.0: 最小化バグ・認証灰色バグ修正",
+    "v6.0: 最小化バグ・認証灰色バグをバッサリ修正",
 })
 
 SettingsTab:Button("Copy HWID", function()
     if setclipboard then
         setclipboard(HWID)
-        SettingsTab:Notify("HWID", "クリップボードにコピーしました", 2)
+        Window:Notify("System", "HWIDをコピーしました", 2)
     end
 end)
 
@@ -142,3 +146,6 @@ SettingsTab:Button("Destroy UI", function()
     local ui = pg and (pg:FindFirstChild("moon_ui") or pg:FindFirstChild("ryu_ui"))
     if ui then ui:Destroy() end
 end)
+
+-- 最後に通知を飛ばして完了
+Window:Notify("Success", "Astralis v6.0 Loaded Successfully.", 3)
