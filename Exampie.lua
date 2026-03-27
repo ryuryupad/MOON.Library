@@ -57,3 +57,20 @@ SettingsTab:Toggle("Show Notifications", true, function(v) end, "通知を表示
 SettingsTab:Button("Unload UI", function()
     game.Players.LocalPlayer.PlayerGui.ryu_ui:Destroy()
 end)
+
+-- Mainタブの最後に追加しろ
+MainTab:Separator("Virtual Executor")
+local scriptText = ""
+
+MainTab:TextBox("Input Script", "print('Executed from MOON!')", function(v)
+    scriptText = v
+end)
+
+MainTab:Button("Execute", function()
+    local func, err = loadstring(scriptText)
+    if func then
+        task.spawn(func)
+    else
+        Library:Notify("Script Error", err, 5) -- UIの通知機能を使え
+    end
+end)
