@@ -284,13 +284,14 @@ function Library:CreateWindow(config)
     end
     _notifyFn = doNotify
 
-    -- ══════════════════════════════
-    --  1. 起動アニメーション
+-- ══════════════════════════════
+    --  1. 起動アニメーション (連動版)
     -- ══════════════════════════════
     local function playIntro()
         local overlay = make("Frame", {
             Size = UDim2.new(1,0,1,0),
-            BackgroundColor3 = rgb(2,6,14),
+            -- 【修正】背景を T.BG_MAIN (漆黒) に変更
+            BackgroundColor3 = T.BG_MAIN,
             BorderSizePixel = 0, ZIndex = 300,
         }, gui)
 
@@ -300,6 +301,7 @@ function Library:CreateWindow(config)
             local p = make("Frame", {
                 Size = UDim2.new(0,sz,0,sz),
                 Position = UDim2.new(math.random(0,100)/100, 0, math.random(0,100)/100, 0),
+                -- 【修正】パーティクルは Accent (琥珀)
                 BackgroundColor3 = Accent,
                 BorderSizePixel = 0,
                 BackgroundTransparency = math.random(40,85)/100,
@@ -308,6 +310,8 @@ function Library:CreateWindow(config)
             corner(sz, p)
             table.insert(particles, p)
         end
+
+        -- パーティクル移動ロジック
         task.spawn(function()
             for _, p in pairs(particles) do
                 local sp = p.Position
@@ -354,12 +358,14 @@ function Library:CreateWindow(config)
 
         local barTrack = make("Frame", {
             Size=UDim2.new(0,200,0,3), Position=UDim2.new(0.5,-100,0,112),
-            BackgroundColor3=rgb(20,35,58),
+            -- 【修正】バーの土台を T.BG_ELEMENT (深めの黒) に変更
+            BackgroundColor3 = T.BG_ELEMENT,
             BorderSizePixel=0, ZIndex=303,
         }, center)
         corner(2, barTrack)
+        
         local barFill = make("Frame", {
-            Size=UDim2.new(0,0,1,0), BackgroundColor3=Accent,
+            Size=UDim2.new(0,0,1,0), BackgroundColor3=Accent, -- 琥珀
             BorderSizePixel=0, ZIndex=304,
         }, barTrack)
         corner(2, barFill)
@@ -371,61 +377,60 @@ function Library:CreateWindow(config)
             TextXAlignment=Enum.TextXAlignment.Center, ZIndex=303,
         }, center)
 
+        -- アニメーション開始
         task.wait(0.1)
         twWait(logoLine, { Size=UDim2.new(1,0,0,2), Position=UDim2.new(0,0,0,0) }, TW_SLOW)
-        tw(titleLbl, { TextTransparency=0 },
-            TweenInfo.new(0.4,Enum.EasingStyle.Quad,Enum.EasingDirection.Out))
+        tw(titleLbl, { TextTransparency=0 }, TweenInfo.new(0.4,Enum.EasingStyle.Quad,Enum.EasingDirection.Out))
         glitchText(titleLbl, Title, 0.7)
         task.wait(0.5)
-        twWait(subLbl, { TextTransparency=0 },
-            TweenInfo.new(0.35,Enum.EasingStyle.Quad,Enum.EasingDirection.Out))
+        twWait(subLbl, { TextTransparency=0 }, TweenInfo.new(0.35,Enum.EasingStyle.Quad,Enum.EasingDirection.Out))
 
         for _, step in ipairs({
             { text="Loading modules...",  pct=0.30 },
-            { text="Connecting...",       pct=0.55 },
+            { text="Connecting...",        pct=0.55 },
             { text="Verifying assets...", pct=0.80 },
             { text="Ready.",              pct=1.00 },
         }) do
             statusLbl.Text = step.text
-            twWait(barFill, { Size=UDim2.new(step.pct,0,1,0) },
-                TweenInfo.new(0.3,Enum.EasingStyle.Quad,Enum.EasingDirection.Out))
+            twWait(barFill, { Size=UDim2.new(step.pct,0,1,0) }, TweenInfo.new(0.3,Enum.EasingStyle.Quad,Enum.EasingDirection.Out))
             task.wait(0.18)
         end
         task.wait(0.3)
-        -- FIX[1]: overlay を完全に透明にしてから Destroy
-        twWait(overlay, { BackgroundTransparency=1 },
-            TweenInfo.new(0.45,Enum.EasingStyle.Quad,Enum.EasingDirection.Out))
+        twWait(overlay, { BackgroundTransparency=1 }, TweenInfo.new(0.45,Enum.EasingStyle.Quad,Enum.EasingDirection.Out))
         overlay:Destroy()
-        -- ちゃんと消えてから次へ
         task.wait(0.05)
     end
-
-    -- ══════════════════════════════
-    --  2. キー認証システム
+  
+ -- ══════════════════════════════
+    --  2. キー認証システム (完全版)
     -- ══════════════════════════════
     local function showKeySystem()
         local successSignal = Instance.new("BindableEvent")
 
-        -- FIX[1]: ZIndex を intro より上に設定
+        -- 背景オーバーレイ (ZIndexをintroより上に設定)
         local overlay = make("Frame", {
             Size=UDim2.new(1,0,1,0),
-            BackgroundColor3=rgb(3,8,16),
-            BackgroundTransparency=0.25,
+            BackgroundColor3=T.BG_MAIN, -- 漆黒
+            BackgroundTransparency=0.05,
             BorderSizePixel=0, ZIndex=310,
         }, gui)
 
+        -- メインカード
         local card = make("Frame", {
             Size=UDim2.new(0,380,0,230),
             Position=UDim2.new(0.5,-190,0.5,-115),
-            BackgroundColor3=T.BG_MAIN,
+            BackgroundColor3=T.BG_CONTENT,
             BorderSizePixel=0, ZIndex=311,
             BackgroundTransparency=1,
         }, overlay)
         corner(14, card)
         uiStroke(T.BORDER, 1, card)
+        
+        -- フェードイン
         tw(card, { BackgroundTransparency=0 },
             TweenInfo.new(0.3,Enum.EasingStyle.Quad,Enum.EasingDirection.Out))
 
+        -- 装飾用のトップライン (琥珀)
         local topLine = make("Frame", {
             Size=UDim2.new(1,0,0,2), BackgroundColor3=Accent,
             BorderSizePixel=0, ZIndex=312,
@@ -434,13 +439,16 @@ function Library:CreateWindow(config)
 
         pad(20,20,24,24, card)
 
+        -- タイトルとヒント
         make("TextLabel", {
             Text=KeyConfig.Title or "Key Required",
             TextSize=17, Font=Enum.Font.GothamBold,
-            TextColor3=T.TEXT_P, BackgroundTransparency=1,
+            TextColor3=Accent, -- 琥珀
+            BackgroundTransparency=1,
             Size=UDim2.new(1,0,0,26), Position=UDim2.new(0,0,0,14),
             TextXAlignment=Enum.TextXAlignment.Left, ZIndex=313,
         }, card)
+        
         make("TextLabel", {
             Text=KeyConfig.Hint or "有効なキーを入力してください",
             TextSize=11, Font=Enum.Font.Gotham,
@@ -449,6 +457,7 @@ function Library:CreateWindow(config)
             TextXAlignment=Enum.TextXAlignment.Left, ZIndex=313,
         }, card)
 
+        -- 入力フィールド
         local inputBg = make("Frame", {
             Size=UDim2.new(1,0,0,38), Position=UDim2.new(0,0,0,70),
             BackgroundColor3=T.BG_ELEMENT, BorderSizePixel=0, ZIndex=313,
@@ -466,9 +475,11 @@ function Library:CreateWindow(config)
             ClearTextOnFocus=false, ZIndex=314,
         }, inputBg)
 
+        -- フォーカス演出
         input.Focused:Connect(function()  tw(inputStroke, { Color=Accent }) end)
         input.FocusLost:Connect(function() tw(inputStroke, { Color=T.BORDER }) end)
 
+        -- ステータス表示
         local statusLbl = make("TextLabel", {
             Text="", TextSize=11, Font=Enum.Font.Gotham,
             TextColor3=T.TEXT_M, BackgroundTransparency=1,
@@ -476,7 +487,7 @@ function Library:CreateWindow(config)
             TextXAlignment=Enum.TextXAlignment.Left, ZIndex=313,
         }, card)
 
-        local targetUrl = KeyConfig.GetKeyURL
+        -- 確認ボタン (琥珀背景 / 漆黒文字)
         local submitBtn = make("TextButton", {
             Text="Confirm", TextSize=13, Font=Enum.Font.GothamBold,
             TextColor3=T.BG_MAIN, BackgroundColor3=Accent,
@@ -484,9 +495,12 @@ function Library:CreateWindow(config)
         }, card)
         corner(8, submitBtn)
 
+        -- キー取得ボタン (設定がある場合のみ)
+        local targetUrl = KeyConfig.GetKeyURL
         if targetUrl then
             submitBtn.Size     = UDim2.new(0.5,-5,0,38)
             submitBtn.Position = UDim2.new(0.5,5,0,165)
+            
             local getKeyBtn = make("TextButton", {
                 Text="Get Key", TextSize=13, Font=Enum.Font.GothamBold,
                 TextColor3=T.TEXT_P, BackgroundColor3=T.BG_ELEMENT,
@@ -496,6 +510,7 @@ function Library:CreateWindow(config)
             }, card)
             corner(8, getKeyBtn)
             uiStroke(T.BORDER, 0.8, getKeyBtn)
+            
             getKeyBtn.MouseButton1Click:Connect(function()
                 if setclipboard then
                     setclipboard(targetUrl)
@@ -516,9 +531,11 @@ function Library:CreateWindow(config)
             submitBtn.Position = UDim2.new(0,0,0,165)
         end
 
+        -- Confirmボタンホバー演出
         submitBtn.MouseEnter:Connect(function() tw(submitBtn,{BackgroundColor3=lightenColor(Accent,0.1)}) end)
         submitBtn.MouseLeave:Connect(function() tw(submitBtn,{BackgroundColor3=Accent}) end)
 
+        -- 内部バリデーション
         local function validateKey(key)
             key = key:match("^%s*(.-)%s*$")
             if KeyConfig.Key and key == KeyConfig.Key then return true end
@@ -541,16 +558,18 @@ function Library:CreateWindow(config)
                 statusLbl.TextColor3 = T.STATUS_RED
                 return
             end
+
             active = false
             statusLbl.Text = "Verifying..."
             statusLbl.TextColor3 = T.TEXT_M
             task.wait(0.4)
+
             if validateKey(input.Text) then
                 statusLbl.Text = "✓ 認証成功"
                 statusLbl.TextColor3 = T.STATUS_GREEN
                 tw(topLine, { BackgroundColor3=T.STATUS_GREEN })
                 task.wait(0.7)
-                -- FIX[1]: overlay を先に透明にしてから Destroy
+                
                 twWait(overlay, { BackgroundTransparency=1 },
                     TweenInfo.new(0.3,Enum.EasingStyle.Quad,Enum.EasingDirection.Out))
                 overlay:Destroy()
@@ -559,6 +578,8 @@ function Library:CreateWindow(config)
             else
                 statusLbl.Text = "✕ 無効なキーです"
                 statusLbl.TextColor3 = T.STATUS_RED
+                
+                -- シェイク演出
                 local origPos = inputBg.Position
                 for i = 1, 4 do
                     twWait(inputBg,
@@ -578,7 +599,6 @@ function Library:CreateWindow(config)
         successSignal.Event:Wait()
         successSignal:Destroy()
     end
-
     -- ══════════════════════════════
     --  3. メイン GUI
     -- ══════════════════════════════
