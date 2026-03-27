@@ -1,7 +1,30 @@
 -- ╔══════════════════════════════════════════════════════════════╗
--- ║                  Library.lua  (v2.1)                        ║
--- ║  Dropdown/Sliderバグ修正・ドラッグ・最小化・削除ボタン追加   ║
+-- ║              MOON UI Library  (v3.0)                        ║
+-- ║  by ryuryupad  |  完全リビルド版                            ║
 -- ╚══════════════════════════════════════════════════════════════╝
+--[[
+  変更点 (v2.1 → v3.0)
+  ────────────────────────────────────────────────────────────────
+  BUG FIX
+  [1] キー認証後に画面が灰色になる問題を修正
+      → overlay の ZIndex 管理と Destroy タイミングを修正
+  [2] 最小化時に角が尖る問題を修正
+      → ClipsDescendants を使わず contentWrapper を隠す方式に変更
+  [3] 最小化が機能しない問題を修正
+      → minimized フラグと Tween の競合を解消
+  [4] T.BG_TOP 未定義バグを修正 → T.BG_TOPBAR に統一
+  [5] ドラッグロジック二重定義を削除
+  
+  NEW FEATURES
+  [6] 赤青緑トラフィックドットを削除
+  [7] タブアイコン: テキスト絵文字 & 画像ID 両対応
+  [8] グラデーション枠 (UIGradient) & 虹色対応
+  [9] 左下ユーザーパネル (config.UserPanel で ON/OFF)
+  [10] ColorPicker (RGBスライダー3本 + プレビュー)
+  [11] Notify (右下トースト通知)
+  [12] Input (TextBox付きコンポーネント)
+  ────────────────────────────────────────────────────────────────
+]]
 
 local Players          = game:GetService("Players")
 local TweenService     = game:GetService("TweenService")
@@ -10,27 +33,27 @@ local UserInputService = game:GetService("UserInputService")
 local LocalPlayer = Players.LocalPlayer
 local PlayerGui   = LocalPlayer:WaitForChild("PlayerGui")
 
--- ─────────────────────────────────────────
---  Tween ユーティリティ
--- ─────────────────────────────────────────
+-- ══════════════════════════════════════════════════════════════
+--  ユーティリティ
+-- ══════════════════════════════════════════════════════════════
 local TW_FAST = TweenInfo.new(0.12, Enum.EasingStyle.Quad,  Enum.EasingDirection.Out)
 local TW_MED  = TweenInfo.new(0.22, Enum.EasingStyle.Quad,  Enum.EasingDirection.Out)
 local TW_SLOW = TweenInfo.new(0.50, Enum.EasingStyle.Quint, Enum.EasingDirection.Out)
 
 local function tw(obj, props, info)
+    if not obj or not obj.Parent then return end
     TweenService:Create(obj, info or TW_FAST, props):Play()
 end
 local function twWait(obj, props, info)
+    if not obj or not obj.Parent then return end
     local t = TweenService:Create(obj, info or TW_FAST, props)
     t:Play(); t.Completed:Wait()
 end
-
--- ─────────────────────────────────────────
---  インスタンスユーティリティ
--- ─────────────────────────────────────────
 local function make(class, props, parent)
     local o = Instance.new(class)
-    for k, v in pairs(props) do o[k] = v end
+    for k, v in pairs(props) do
+        pcall(function() o[k] = v end)
+    end
     if parent then o.Parent = parent end
     return o
 end
@@ -57,80 +80,207 @@ local function lightenColor(c, f)
     f = f or 0.35
     return Color3.new(math.min(c.R+f,1), math.min(c.G+f,1), math.min(c.B+f,1))
 end
+local function rgb(r,g,b) return Color3.fromRGB(r,g,b) end
 
--- ─────────────────────────────────────────
---  グリッチテキスト
--- ─────────────────────────────────────────
+-- グリッチテキスト
 local GLITCH_CHARS = "!<>-_\\/[]{}—=+*^?#"
 local function glitchText(label, finalText, duration)
     local steps = math.floor(duration / 0.04)
-    spawn(function()
+    task.spawn(function()
         for i = 1, steps do
             local revealed = math.floor(#finalText * (i/steps))
             local result   = string.sub(finalText, 1, revealed)
             for _ = 1, #finalText - revealed do
-                result = result .. string.sub(GLITCH_CHARS, math.random(1,#GLITCH_CHARS), math.random(1,#GLITCH_CHARS))
+                result = result .. string.sub(GLITCH_CHARS,
+                    math.random(1,#GLITCH_CHARS), math.random(1,#GLITCH_CHARS))
             end
             label.Text = result
-            wait(0.04)
+            task.wait(0.04)
         end
         label.Text = finalText
     end)
 end
 
--- ══════════════════════════════════════════
+-- グラデーションストローク用 ColorSequence
+local function rainbowColorSequence()
+    local kp = {}
+    local colors = {
+        rgb(255,0,0), rgb(255,128,0), rgb(255,255,0),
+        rgb(0,255,0), rgb(0,200,255), rgb(128,0,255), rgb(255,0,0)
+    }
+    for i, c in ipairs(colors) do
+        table.insert(kp, ColorSequenceKeypoint.new((i-1)/(#colors-1), c))
+    end
+    return ColorSequence.new(kp)
+end
+
+local function gradientColorSequence(c1, c2)
+    return ColorSequence.new({
+        ColorSequenceKeypoint.new(0, c1),
+        ColorSequenceKeypoint.new(1, c2),
+    })
+end
+
+-- ══════════════════════════════════════════════════════════════
 --  Library
--- ══════════════════════════════════════════
+-- ══════════════════════════════════════════════════════════════
 local Library = {}
+
+-- ──────────────────────────────────────────────────────────────
+--  グローバル Notify (Window外からも呼べるように後で差し替え)
+-- ──────────────────────────────────────────────────────────────
+local _notifyFn = nil
+function Library:Notify(title, content, duration)
+    if _notifyFn then _notifyFn(title, content, duration) end
+end
 
 function Library:CreateWindow(config)
     config = config or {}
 
-    local Title     = config.Title    or "UI Library"
-    local Subtitle  = config.Subtitle or "v1.0"
-    local Accent    = config.Color    or Color3.fromRGB(40, 130, 255)
-    local Keybind   = config.Keybind  or Enum.KeyCode.RightShift
-    local Neon      = config.Neon     ~= nil and config.Neon or false
-    local KeyConfig = config.KeySystem or { Enabled = false }
+    local Title      = config.Title      or "MOON UI"
+    local Subtitle   = config.Subtitle   or "v3.0"
+    local Accent     = config.Color      or rgb(40, 130, 255)
+    local Keybind    = config.Keybind    or Enum.KeyCode.RightShift
+    local Neon       = config.Neon       ~= nil and config.Neon or false
+    local KeyConfig  = config.KeySystem  or { Enabled = false }
+    local UserPanel  = config.UserPanel  or { Enabled = false }
+
+    -- グラデーション枠設定
+    -- config.Border = { Type="gradient", Colors={c1,c2} } or { Type="rainbow" } or nil(通常)
+    local BorderCfg  = config.Border or { Type = "solid" }
 
     -- テーマ
     local T = {
-        BG_MAIN      = Color3.fromRGB(5,  14, 26),
-        BG_TOPBAR    = Color3.fromRGB(8,  18, 32),
-        BG_SIDEBAR   = Color3.fromRGB(6,  15, 28),
-        BG_CONTENT   = Color3.fromRGB(4,  11, 22),
-        BG_ELEMENT   = Color3.fromRGB(10, 22, 38),
-        BG_ELEMENT_H = Color3.fromRGB(16, 32, 54),
-        BORDER       = Color3.fromRGB(28, 46, 72),
-        TEXT_P       = Color3.fromRGB(210, 220, 235),
-        TEXT_S       = Color3.fromRGB(110, 130, 160),
-        TEXT_M       = Color3.fromRGB(55,   75, 105),
+        BG_MAIN      = rgb(5,  14, 26),
+        BG_TOPBAR    = rgb(8,  18, 32),
+        BG_SIDEBAR   = rgb(6,  15, 28),
+        BG_CONTENT   = rgb(4,  11, 22),
+        BG_ELEMENT   = rgb(10, 22, 38),
+        BG_ELEMENT_H = rgb(16, 32, 54),
+        BORDER       = rgb(28, 46, 72),
+        TEXT_P       = rgb(210, 220, 235),
+        TEXT_S       = rgb(110, 130, 160),
+        TEXT_M       = rgb(55,  75, 105),
         ACCENT       = Accent,
         ACCENT_DIM   = dimColor(Accent, 0.22),
         ACCENT_TEXT  = lightenColor(Accent, 0.35),
-        STATUS_GREEN = Color3.fromRGB(40,  200, 100),
-        STATUS_RED   = Color3.fromRGB(220,  60,  60),
+        STATUS_GREEN = rgb(40,  200, 100),
+        STATUS_RED   = rgb(220,  60,  60),
     }
 
     local gui = make("ScreenGui", {
-        Name = "ryu_ui", ResetOnSpawn = false,
+        Name = "moon_ui", ResetOnSpawn = false,
         ZIndexBehavior = Enum.ZIndexBehavior.Sibling,
         IgnoreGuiInset = true,
+        DisplayOrder = 10,
     }, PlayerGui)
 
-    -- ════════════════════════════
+    -- ══════════════════════════════
+    --  Notify システム (右下トースト)
+    -- ══════════════════════════════
+    local notifyContainer = make("Frame", {
+        Size = UDim2.new(0, 300, 1, 0),
+        Position = UDim2.new(1, -310, 0, 0),
+        BackgroundTransparency = 1,
+        BorderSizePixel = 0,
+        ZIndex = 500,
+    }, gui)
+    make("UIListLayout", {
+        SortOrder = Enum.SortOrder.LayoutOrder,
+        VerticalAlignment = Enum.VerticalAlignment.Bottom,
+        Padding = UDim.new(0, 6),
+    }, notifyContainer)
+    pad(0, 12, 0, 0, notifyContainer)
+
+    local notifyCount = 0
+    local function doNotify(title, content, duration)
+        duration = duration or 3
+        notifyCount += 1
+
+        local nt = make("Frame", {
+            Size = UDim2.new(1, 0, 0, 0),
+            BackgroundColor3 = T.BG_ELEMENT,
+            BorderSizePixel = 0,
+            ClipsDescendants = true,
+            LayoutOrder = notifyCount,
+            BackgroundTransparency = 1,
+            ZIndex = 501,
+        }, notifyContainer)
+        corner(10, nt)
+        uiStroke(T.BORDER, 0.8, nt)
+
+        -- アクセントライン
+        local accentLine = make("Frame", {
+            Size = UDim2.new(0, 3, 1, 0),
+            BackgroundColor3 = Accent,
+            BorderSizePixel = 0,
+            ZIndex = 502,
+        }, nt)
+        corner(2, accentLine)
+
+        make("TextLabel", {
+            Text = title,
+            TextSize = 13, Font = Enum.Font.GothamBold,
+            TextColor3 = T.TEXT_P, BackgroundTransparency = 1,
+            Size = UDim2.new(1, -20, 0, 20),
+            Position = UDim2.new(0, 14, 0, 8),
+            TextXAlignment = Enum.TextXAlignment.Left,
+            ZIndex = 502,
+        }, nt)
+        make("TextLabel", {
+            Text = content,
+            TextSize = 11, Font = Enum.Font.Gotham,
+            TextColor3 = T.TEXT_S, BackgroundTransparency = 1,
+            Size = UDim2.new(1, -20, 0, 16),
+            Position = UDim2.new(0, 14, 0, 30),
+            TextXAlignment = Enum.TextXAlignment.Left,
+            TextWrapped = true,
+            ZIndex = 502,
+        }, nt)
+
+        -- 進捗バー
+        local progTrack = make("Frame", {
+            Size = UDim2.new(1, -14, 0, 2),
+            Position = UDim2.new(0, 14, 1, -6),
+            BackgroundColor3 = T.BORDER,
+            BorderSizePixel = 0,
+            ZIndex = 502,
+        }, nt)
+        corner(1, progTrack)
+        local progFill = make("Frame", {
+            Size = UDim2.new(1, 0, 1, 0),
+            BackgroundColor3 = Accent,
+            BorderSizePixel = 0,
+            ZIndex = 503,
+        }, progTrack)
+        corner(1, progFill)
+
+        task.spawn(function()
+            -- 登場
+            twWait(nt, { Size = UDim2.new(1, 0, 0, 58), BackgroundTransparency = 0 }, TW_MED)
+            -- プログレス
+            tw(progFill, { Size = UDim2.new(0, 0, 1, 0) },
+                TweenInfo.new(duration, Enum.EasingStyle.Linear, Enum.EasingDirection.Out))
+            task.wait(duration)
+            -- 退場
+            twWait(nt, { Size = UDim2.new(1, 0, 0, 0), BackgroundTransparency = 1 }, TW_MED)
+            nt:Destroy()
+        end)
+    end
+    _notifyFn = doNotify
+
+    -- ══════════════════════════════
     --  1. 起動アニメーション
-    -- ════════════════════════════
+    -- ══════════════════════════════
     local function playIntro()
         local overlay = make("Frame", {
             Size = UDim2.new(1,0,1,0),
-            BackgroundColor3 = Color3.fromRGB(2,6,14),
-            BorderSizePixel = 0, ZIndex = 100,
+            BackgroundColor3 = rgb(2,6,14),
+            BorderSizePixel = 0, ZIndex = 300,
         }, gui)
 
-        -- パーティクル
         local particles = {}
-        for i = 1, 28 do
+        for _ = 1, 24 do
             local sz = math.random(2,5)
             local p = make("Frame", {
                 Size = UDim2.new(0,sz,0,sz),
@@ -138,21 +288,23 @@ function Library:CreateWindow(config)
                 BackgroundColor3 = Accent,
                 BorderSizePixel = 0,
                 BackgroundTransparency = math.random(40,85)/100,
-                ZIndex = 101,
+                ZIndex = 301,
             }, overlay)
             corner(sz, p)
             table.insert(particles, p)
         end
-        spawn(function()
+        task.spawn(function()
             for _, p in pairs(particles) do
                 local sp = p.Position
-                spawn(function()
+                task.spawn(function()
                     while p and p.Parent do
                         local tx = math.clamp(sp.X.Scale+(math.random(-8,8)/100),0,0.98)
                         local ty = math.clamp(sp.Y.Scale+(math.random(-8,8)/100),0,0.98)
-                        tw(p, { Position=UDim2.new(tx,0,ty,0), BackgroundTransparency=math.random(30,80)/100 },
-                            TweenInfo.new(math.random(15,30)/10, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut))
-                        wait(math.random(15,30)/10)
+                        tw(p, { Position=UDim2.new(tx,0,ty,0),
+                            BackgroundTransparency=math.random(30,80)/100 },
+                            TweenInfo.new(math.random(15,30)/10,
+                                Enum.EasingStyle.Sine, Enum.EasingDirection.InOut))
+                        task.wait(math.random(15,30)/10)
                     end
                 end)
             end
@@ -160,12 +312,12 @@ function Library:CreateWindow(config)
 
         local center = make("Frame", {
             Size=UDim2.new(0,320,0,140), Position=UDim2.new(0.5,-160,0.5,-70),
-            BackgroundTransparency=1, ZIndex=102,
+            BackgroundTransparency=1, ZIndex=302,
         }, overlay)
 
         local logoLine = make("Frame", {
             Size=UDim2.new(0,0,0,2), Position=UDim2.new(0.5,0,0,0),
-            BackgroundColor3=Accent, BorderSizePixel=0, ZIndex=103,
+            BackgroundColor3=Accent, BorderSizePixel=0, ZIndex=303,
         }, center)
         corner(1, logoLine)
 
@@ -174,7 +326,7 @@ function Library:CreateWindow(config)
             TextColor3=T.TEXT_P, BackgroundTransparency=1,
             Size=UDim2.new(1,0,0,56), Position=UDim2.new(0,0,0,20),
             TextXAlignment=Enum.TextXAlignment.Center,
-            TextTransparency=1, ZIndex=103,
+            TextTransparency=1, ZIndex=303,
         }, center)
 
         local subLbl = make("TextLabel", {
@@ -182,18 +334,18 @@ function Library:CreateWindow(config)
             TextColor3=T.ACCENT_TEXT, BackgroundTransparency=1,
             Size=UDim2.new(1,0,0,20), Position=UDim2.new(0,0,0,78),
             TextXAlignment=Enum.TextXAlignment.Center,
-            TextTransparency=1, ZIndex=103,
+            TextTransparency=1, ZIndex=303,
         }, center)
 
         local barTrack = make("Frame", {
             Size=UDim2.new(0,200,0,3), Position=UDim2.new(0.5,-100,0,112),
-            BackgroundColor3=Color3.fromRGB(20,35,58),
-            BorderSizePixel=0, ZIndex=103,
+            BackgroundColor3=rgb(20,35,58),
+            BorderSizePixel=0, ZIndex=303,
         }, center)
         corner(2, barTrack)
         local barFill = make("Frame", {
             Size=UDim2.new(0,0,1,0), BackgroundColor3=Accent,
-            BorderSizePixel=0, ZIndex=104,
+            BorderSizePixel=0, ZIndex=304,
         }, barTrack)
         corner(2, barFill)
 
@@ -201,15 +353,17 @@ function Library:CreateWindow(config)
             Text="Initializing...", TextSize=11, Font=Enum.Font.Gotham,
             TextColor3=T.TEXT_M, BackgroundTransparency=1,
             Size=UDim2.new(1,0,0,16), Position=UDim2.new(0,0,0,122),
-            TextXAlignment=Enum.TextXAlignment.Center, ZIndex=103,
+            TextXAlignment=Enum.TextXAlignment.Center, ZIndex=303,
         }, center)
 
-        wait(0.1)
+        task.wait(0.1)
         twWait(logoLine, { Size=UDim2.new(1,0,0,2), Position=UDim2.new(0,0,0,0) }, TW_SLOW)
-        tw(titleLbl, { TextTransparency=0 }, TweenInfo.new(0.4,Enum.EasingStyle.Quad,Enum.EasingDirection.Out))
+        tw(titleLbl, { TextTransparency=0 },
+            TweenInfo.new(0.4,Enum.EasingStyle.Quad,Enum.EasingDirection.Out))
         glitchText(titleLbl, Title, 0.7)
-        wait(0.5)
-        twWait(subLbl, { TextTransparency=0 }, TweenInfo.new(0.35,Enum.EasingStyle.Quad,Enum.EasingDirection.Out))
+        task.wait(0.5)
+        twWait(subLbl, { TextTransparency=0 },
+            TweenInfo.new(0.35,Enum.EasingStyle.Quad,Enum.EasingDirection.Out))
 
         for _, step in ipairs({
             { text="Loading modules...",  pct=0.30 },
@@ -220,43 +374,46 @@ function Library:CreateWindow(config)
             statusLbl.Text = step.text
             twWait(barFill, { Size=UDim2.new(step.pct,0,1,0) },
                 TweenInfo.new(0.3,Enum.EasingStyle.Quad,Enum.EasingDirection.Out))
-            wait(0.18)
+            task.wait(0.18)
         end
-        wait(0.3)
+        task.wait(0.3)
+        -- FIX[1]: overlay を完全に透明にしてから Destroy
         twWait(overlay, { BackgroundTransparency=1 },
             TweenInfo.new(0.45,Enum.EasingStyle.Quad,Enum.EasingDirection.Out))
         overlay:Destroy()
+        -- ちゃんと消えてから次へ
+        task.wait(0.05)
     end
 
--- ════════════════════════════
-    --  2. KEYシステム (改良版: レスポンシブレイアウト)
-    -- ════════════════════════════
+    -- ══════════════════════════════
+    --  2. キー認証システム
+    -- ══════════════════════════════
     local function showKeySystem()
         local successSignal = Instance.new("BindableEvent")
 
+        -- FIX[1]: ZIndex を intro より上に設定
         local overlay = make("Frame", {
             Size=UDim2.new(1,0,1,0),
-            BackgroundColor3=Color3.fromRGB(3,8,16),
-            BackgroundTransparency=0.3,
-            BorderSizePixel=0, ZIndex=50,
+            BackgroundColor3=rgb(3,8,16),
+            BackgroundTransparency=0.25,
+            BorderSizePixel=0, ZIndex=310,
         }, gui)
 
-        -- 縦サイズを少し広げて(230)ボタンの圧迫感を解消
         local card = make("Frame", {
-            Size=UDim2.new(0,380,0,230), 
+            Size=UDim2.new(0,380,0,230),
             Position=UDim2.new(0.5,-190,0.5,-115),
             BackgroundColor3=T.BG_MAIN,
-            BorderSizePixel=0, ZIndex=51,
+            BorderSizePixel=0, ZIndex=311,
             BackgroundTransparency=1,
         }, overlay)
         corner(14, card)
         uiStroke(T.BORDER, 1, card)
-        tw(card, { BackgroundTransparency=0 }, TweenInfo.new(0.3,Enum.EasingStyle.Quad,Enum.EasingDirection.Out))
+        tw(card, { BackgroundTransparency=0 },
+            TweenInfo.new(0.3,Enum.EasingStyle.Quad,Enum.EasingDirection.Out))
 
-        -- アクセントトップライン
         local topLine = make("Frame", {
             Size=UDim2.new(1,0,0,2), BackgroundColor3=Accent,
-            BorderSizePixel=0, ZIndex=52,
+            BorderSizePixel=0, ZIndex=312,
         }, card)
         corner(14, topLine)
 
@@ -267,20 +424,19 @@ function Library:CreateWindow(config)
             TextSize=17, Font=Enum.Font.GothamBold,
             TextColor3=T.TEXT_P, BackgroundTransparency=1,
             Size=UDim2.new(1,0,0,26), Position=UDim2.new(0,0,0,14),
-            TextXAlignment=Enum.TextXAlignment.Left, ZIndex=53,
+            TextXAlignment=Enum.TextXAlignment.Left, ZIndex=313,
         }, card)
-        
         make("TextLabel", {
             Text=KeyConfig.Hint or "有効なキーを入力してください",
             TextSize=11, Font=Enum.Font.Gotham,
             TextColor3=T.TEXT_M, BackgroundTransparency=1,
             Size=UDim2.new(1,0,0,16), Position=UDim2.new(0,0,0,42),
-            TextXAlignment=Enum.TextXAlignment.Left, ZIndex=53,
+            TextXAlignment=Enum.TextXAlignment.Left, ZIndex=313,
         }, card)
 
         local inputBg = make("Frame", {
             Size=UDim2.new(1,0,0,38), Position=UDim2.new(0,0,0,70),
-            BackgroundColor3=T.BG_ELEMENT, BorderSizePixel=0, ZIndex=53,
+            BackgroundColor3=T.BG_ELEMENT, BorderSizePixel=0, ZIndex=313,
         }, card)
         corner(8, inputBg)
         local inputStroke = uiStroke(T.BORDER, 0.8, inputBg)
@@ -292,7 +448,7 @@ function Library:CreateWindow(config)
             BackgroundTransparency=1,
             Size=UDim2.new(1,-16,1,0), Position=UDim2.new(0,10,0,0),
             TextXAlignment=Enum.TextXAlignment.Left,
-            ClearTextOnFocus=false, ZIndex=54,
+            ClearTextOnFocus=false, ZIndex=314,
         }, inputBg)
 
         input.Focused:Connect(function()  tw(inputStroke, { Color=Accent }) end)
@@ -302,35 +458,29 @@ function Library:CreateWindow(config)
             Text="", TextSize=11, Font=Enum.Font.Gotham,
             TextColor3=T.TEXT_M, BackgroundTransparency=1,
             Size=UDim2.new(1,0,0,14), Position=UDim2.new(0,0,0,118),
-            TextXAlignment=Enum.TextXAlignment.Left, ZIndex=53,
+            TextXAlignment=Enum.TextXAlignment.Left, ZIndex=313,
         }, card)
 
-        -- ══ ボタンの動的レイアウト ══
-        local targetUrl = KeyConfig.GetKeyURL or (KeyConfig.Hint and KeyConfig.Hint:match("https://%S+"))
-        
+        local targetUrl = KeyConfig.GetKeyURL
         local submitBtn = make("TextButton", {
             Text="Confirm", TextSize=13, Font=Enum.Font.GothamBold,
             TextColor3=T.BG_MAIN, BackgroundColor3=Accent,
-            BorderSizePixel=0, AutoButtonColor=false,
-            ZIndex=53,
+            BorderSizePixel=0, AutoButtonColor=false, ZIndex=313,
         }, card)
         corner(8, submitBtn)
 
         if targetUrl then
-            -- Get Keyがある場合は横並び (Position 165でゆとりを確保)
-            submitBtn.Size = UDim2.new(0.5, -5, 0, 38)
-            submitBtn.Position = UDim2.new(0.5, 5, 0, 165)
-
+            submitBtn.Size     = UDim2.new(0.5,-5,0,38)
+            submitBtn.Position = UDim2.new(0.5,5,0,165)
             local getKeyBtn = make("TextButton", {
                 Text="Get Key", TextSize=13, Font=Enum.Font.GothamBold,
                 TextColor3=T.TEXT_P, BackgroundColor3=T.BG_ELEMENT,
                 BorderSizePixel=0, AutoButtonColor=false,
-                Size=UDim2.new(0.5, -5, 0, 38), Position=UDim2.new(0, 0, 0, 165),
-                ZIndex=53,
+                Size=UDim2.new(0.5,-5,0,38), Position=UDim2.new(0,0,0,165),
+                ZIndex=313,
             }, card)
             corner(8, getKeyBtn)
             uiStroke(T.BORDER, 0.8, getKeyBtn)
-
             getKeyBtn.MouseButton1Click:Connect(function()
                 if setclipboard then
                     setclipboard(targetUrl)
@@ -338,23 +488,22 @@ function Library:CreateWindow(config)
                     getKeyBtn.Text = "Copied!"
                     getKeyBtn.TextColor3 = T.STATUS_GREEN
                     task.wait(1.5)
-                    getKeyBtn.Text = old
-                    getKeyBtn.TextColor3 = T.TEXT_P
+                    if getKeyBtn and getKeyBtn.Parent then
+                        getKeyBtn.Text = old
+                        getKeyBtn.TextColor3 = T.TEXT_P
+                    end
                 end
             end)
-            
-            getKeyBtn.MouseEnter:Connect(function() tw(getKeyBtn, {BackgroundColor3=T.BG_ELEMENT_H}) end)
-            getKeyBtn.MouseLeave:Connect(function() tw(getKeyBtn, {BackgroundColor3=T.BG_ELEMENT}) end)
+            getKeyBtn.MouseEnter:Connect(function() tw(getKeyBtn,{BackgroundColor3=T.BG_ELEMENT_H}) end)
+            getKeyBtn.MouseLeave:Connect(function() tw(getKeyBtn,{BackgroundColor3=T.BG_ELEMENT}) end)
         else
-            -- 通常時 (フルサイズ)
-            submitBtn.Size = UDim2.new(1, 0, 0, 38)
-            submitBtn.Position = UDim2.new(0, 0, 0, 165)
+            submitBtn.Size     = UDim2.new(1,0,0,38)
+            submitBtn.Position = UDim2.new(0,0,0,165)
         end
 
         submitBtn.MouseEnter:Connect(function() tw(submitBtn,{BackgroundColor3=lightenColor(Accent,0.1)}) end)
         submitBtn.MouseLeave:Connect(function() tw(submitBtn,{BackgroundColor3=Accent}) end)
 
-        -- ══ 認証ロジック ══
         local function validateKey(key)
             key = key:match("^%s*(.-)%s*$")
             if KeyConfig.Key and key == KeyConfig.Key then return true end
@@ -370,143 +519,156 @@ function Library:CreateWindow(config)
         end
 
         local active = true
-        submitBtn.MouseButton1Click:Connect(function()
+        local function trySubmit()
             if not active then return end
             if input.Text == "" then
-                statusLbl.Text = "キーを入力してください"; statusLbl.TextColor3 = T.STATUS_RED
+                statusLbl.Text = "キーを入力してください"
+                statusLbl.TextColor3 = T.STATUS_RED
                 return
             end
-            active = false; statusLbl.Text = "Verifying..."; statusLbl.TextColor3 = T.TEXT_M
-            wait(0.4)
+            active = false
+            statusLbl.Text = "Verifying..."
+            statusLbl.TextColor3 = T.TEXT_M
+            task.wait(0.4)
             if validateKey(input.Text) then
-                statusLbl.Text = "✓ 認証成功"; statusLbl.TextColor3 = T.STATUS_GREEN
+                statusLbl.Text = "✓ 認証成功"
+                statusLbl.TextColor3 = T.STATUS_GREEN
                 tw(topLine, { BackgroundColor3=T.STATUS_GREEN })
-                wait(0.7)
-                twWait(overlay, { BackgroundTransparency=1 }, TweenInfo.new(0.3,Enum.EasingStyle.Quad,Enum.EasingDirection.Out))
+                task.wait(0.7)
+                -- FIX[1]: overlay を先に透明にしてから Destroy
+                twWait(overlay, { BackgroundTransparency=1 },
+                    TweenInfo.new(0.3,Enum.EasingStyle.Quad,Enum.EasingDirection.Out))
                 overlay:Destroy()
+                task.wait(0.05)
                 successSignal:Fire()
             else
-                statusLbl.Text = "✕ 無効なキーです"; statusLbl.TextColor3 = T.STATUS_RED
+                statusLbl.Text = "✕ 無効なキーです"
+                statusLbl.TextColor3 = T.STATUS_RED
                 local origPos = inputBg.Position
                 for i = 1, 4 do
-                    twWait(inputBg, { Position=UDim2.new(0, i%2==0 and 6 or -6, 0, 70) }, TweenInfo.new(0.05,Enum.EasingStyle.Quad))
+                    twWait(inputBg,
+                        { Position=UDim2.new(0, i%2==0 and 6 or -6, 0, 70) },
+                        TweenInfo.new(0.05,Enum.EasingStyle.Quad))
                 end
-                inputBg.Position = origPos; active = true
+                inputBg.Position = origPos
+                active = true
             end
-        end)
+        end
 
+        submitBtn.MouseButton1Click:Connect(trySubmit)
         input.FocusLost:Connect(function(enter)
-            if enter then submitBtn.MouseButton1Click:Fire() end
+            if enter then trySubmit() end
         end)
 
         successSignal.Event:Wait()
         successSignal:Destroy()
     end
 
-    -- ════════════════════════════
-    --  3. メインGUI
-    -- ════════════════════════════
+    -- ══════════════════════════════
+    --  3. メイン GUI
+    -- ══════════════════════════════
     local function buildMainGUI()
-        -- ウィンドウサイズ定数
         local WIN_W, WIN_H = 680, 480
         local SIDEBAR_W    = 148
         local TOPBAR_H     = 50
+        -- ユーザーパネルが有効なら下部に高さを追加
+        local USERPANEL_H  = (UserPanel.Enabled) and 52 or 0
 
--- 1. メインウィンドウ
+        -- ─── メインフレーム ───────────────────────
         local main = make("Frame", {
-            Name="MainFrame",
-            Size=UDim2.new(0, WIN_W, 0, 0),
-            Position=UDim2.new(0.5, -WIN_W/2, 0.5, -WIN_H/2),
-            BackgroundColor3=T.BG_MAIN,
-            BorderSizePixel=0,
-            ClipsDescendants=true, -- アニメーション中の中身隠し
+            Name = "MainFrame",
+            Size = UDim2.new(0, WIN_W, 0, 0),
+            Position = UDim2.new(0.5, -WIN_W/2, 0.5, -WIN_H/2),
+            BackgroundColor3 = T.BG_MAIN,
+            BorderSizePixel = 0,
+            ClipsDescendants = false,  -- FIX[2]: ClipsDescendants は使わない
         }, gui)
-        corner(12, main) -- 親の角丸
-        local stroke = uiStroke(T.BORDER, 1, main)
-        stroke.LineJoinMode = Enum.LineJoinMode.Round -- 枠線の角も丸くする
+        corner(12, main)
 
-        -- 2. トップバー (ここが犯人だ)
-        local topbar = make("Frame", {
-            Name="TopBar",
-            Size=UDim2.new(1, 0, 0, TOPBAR_H),
-            BackgroundColor3=T.BG_TOP,
-            BorderSizePixel=0,
-            Parent = main,
-        })
-        -- ★重要：トップバーにも同じ半径の角丸を入れる
-        corner(12, topbar) 
-
-        -- ★重要：トップバーの「下の角」の尖りを目立たせないために、
-        -- 少しだけ（2pxくらい）下に伸ばしたダミーの背景を敷くか、
-        -- そのままにする。上の角が丸まれば、画像の問題は解決する。
-        -- 開くアニメ
-        twWait(main, { Size=UDim2.new(0,WIN_W,0,WIN_H) }, TW_SLOW)
-
-        -- Neon
-        if Neon then
-            local glow = make("UIStroke", {
-                Color=Accent, Thickness=1.5,
-                ApplyStrokeMode=Enum.ApplyStrokeMode.Border,
-            }, main)
-            spawn(function()
-                local up = true
-                while gui.Parent do
-                    twWait(glow, { Thickness=up and 2.8 or 1.0 },
-                        TweenInfo.new(1.4,Enum.EasingStyle.Sine,Enum.EasingDirection.InOut))
-                    up = not up
+        -- 枠線 (グラデーション対応)
+        if BorderCfg.Type == "rainbow" then
+            -- 虹色グラデーション枠
+            local stroke = uiStroke(rgb(255,255,255), 1.5, main)
+            local grad = make("UIGradient", {
+                Color = rainbowColorSequence(),
+                Rotation = 0,
+            }, stroke)
+            -- 回転アニメ
+            task.spawn(function()
+                local rot = 0
+                while main and main.Parent do
+                    rot = (rot + 1) % 360
+                    grad.Rotation = rot
+                    task.wait(0.016)
                 end
             end)
+        elseif BorderCfg.Type == "gradient" and BorderCfg.Colors then
+            local stroke = uiStroke(rgb(255,255,255), 1.2, main)
+            make("UIGradient", {
+                Color = gradientColorSequence(BorderCfg.Colors[1], BorderCfg.Colors[2]),
+                Rotation = BorderCfg.Rotation or 45,
+            }, stroke)
+        else
+            -- 通常の単色枠
+            local stroke = uiStroke(T.BORDER, 1, main)
+            stroke.LineJoinMode = Enum.LineJoinMode.Round
+            -- Neon パルス
+            if Neon then
+                task.spawn(function()
+                    local up = true
+                    while main and main.Parent do
+                        twWait(stroke, { Thickness = up and 2.8 or 1.0 },
+                            TweenInfo.new(1.4,Enum.EasingStyle.Sine,Enum.EasingDirection.InOut))
+                        up = not up
+                    end
+                end)
+            end
         end
 
-        -- ── トップバー ──────────────────────
+        -- ─── コンテンツラッパー (FIX[2]: ここを隠す方式で最小化) ───
+        local contentWrapper = make("Frame", {
+            Name = "ContentWrapper",
+            Size = UDim2.new(1, 0, 1, -TOPBAR_H),
+            Position = UDim2.new(0, 0, 0, TOPBAR_H),
+            BackgroundTransparency = 1,
+            BorderSizePixel = 0,
+            ClipsDescendants = false,
+        }, main)
+
+        -- ─── トップバー ───────────────────────────
         local topBar = make("Frame", {
-            Size=UDim2.new(1,0,0,TOPBAR_H),
-            BackgroundColor3=T.BG_TOPBAR,
-            BorderSizePixel=0, ZIndex=3,
+            Size = UDim2.new(1,0,0,TOPBAR_H),
+            BackgroundColor3 = T.BG_TOPBAR,
+            BorderSizePixel = 0, ZIndex = 3,
         }, main)
         corner(12, topBar)
-        -- 下半分角丸つぶし
+        -- 下半分の角丸をつぶす
         make("Frame", {
-            Size=UDim2.new(1,0,0.5,0), Position=UDim2.new(0,0,0.5,0),
-            BackgroundColor3=T.BG_TOPBAR, BorderSizePixel=0, ZIndex=3,
+            Size = UDim2.new(1,0,0.5,0), Position = UDim2.new(0,0,0.5,0),
+            BackgroundColor3 = T.BG_TOPBAR, BorderSizePixel = 0, ZIndex = 3,
         }, topBar)
         -- 下境界線
         make("Frame", {
-            Size=UDim2.new(1,0,0,1), Position=UDim2.new(0,0,1,-1),
-            BackgroundColor3=T.BORDER, BorderSizePixel=0, ZIndex=4,
+            Size = UDim2.new(1,0,0,1), Position = UDim2.new(0,0,1,-1),
+            BackgroundColor3 = T.BORDER, BorderSizePixel = 0, ZIndex = 4,
         }, topBar)
 
-        -- トラフィックドット（装飾）
-        local dotsF = make("Frame", {
-            Size=UDim2.new(0,54,0,12), Position=UDim2.new(0,14,0.5,-6),
-            BackgroundTransparency=1, ZIndex=5,
-        }, topBar)
-        for i, c in ipairs({
-            Color3.fromRGB(255,95,87), Color3.fromRGB(254,188,46), Color3.fromRGB(40,200,65)
-        }) do
-            local d = make("Frame", {
-                Size=UDim2.new(0,12,0,12), Position=UDim2.new(0,(i-1)*18,0,0),
-                BackgroundColor3=c, BorderSizePixel=0, ZIndex=5,
-            }, dotsF)
-            corner(6, d)
-        end
-
-        -- タイトル（左寄せ、ドットの右から）
+        -- タイトル (FIX[6]: ドットなし、タイトルを左端から)
         make("TextLabel", {
-            Text=Title, TextSize=14, Font=Enum.Font.GothamBold,
-            TextColor3=T.ACCENT_TEXT, BackgroundTransparency=1,
-            Size=UDim2.new(1,-180,1,0),
-            Position=UDim2.new(0,78,0,0),   -- ドット群(14+54=68)の右に余白
-            TextXAlignment=Enum.TextXAlignment.Left, ZIndex=5,
+            Text = Title, TextSize = 14, Font = Enum.Font.GothamBold,
+            TextColor3 = T.ACCENT_TEXT, BackgroundTransparency = 1,
+            Size = UDim2.new(1,-90,1,0),
+            Position = UDim2.new(0,16,0,0),
+            TextXAlignment = Enum.TextXAlignment.Left, ZIndex = 5,
         }, topBar)
 
-        -- ── 右側ボタン群（最小化・閉じる）──
+        -- ─── 右側ボタン (最小化・閉じる) ─────────
         local btnArea = make("Frame", {
-            Size=UDim2.new(0,64,1,0), Position=UDim2.new(1,-68,0,0),
-            BackgroundTransparency=1, ZIndex=5,
+            Size = UDim2.new(0,64,1,0), Position = UDim2.new(1,-68,0,0),
+            BackgroundTransparency = 1, ZIndex = 5,
         }, topBar)
 
-        -- 最小化ボタン
+        -- FIX[2][3]: 最小化 - ClipsDescendants を使わず contentWrapper を隠す
         local minimized = false
         local minimizeBtn = make("TextButton", {
             Text="─", TextSize=14, Font=Enum.Font.GothamBold,
@@ -514,20 +676,21 @@ function Library:CreateWindow(config)
             Size=UDim2.new(0,28,1,0), Position=UDim2.new(0,0,0,0),
             AutoButtonColor=false, ZIndex=5,
         }, btnArea)
-        minimizeBtn.MouseEnter:Connect(function() tw(minimizeBtn,{TextColor3=Color3.fromRGB(254,188,46)}) end)
-        minimizeBtn.MouseLeave:Connect(function() tw(minimizeBtn,{TextColor3=T.TEXT_M}) end)
-        -- 最小化ボタンの挙動修正
+        minimizeBtn.MouseEnter:Connect(function()
+            tw(minimizeBtn,{TextColor3=rgb(254,188,46)})
+        end)
+        minimizeBtn.MouseLeave:Connect(function()
+            tw(minimizeBtn,{TextColor3=T.TEXT_M})
+        end)
         minimizeBtn.MouseButton1Click:Connect(function()
             minimized = not minimized
             if minimized then
-                -- ⚡️ 小さくする時は、まず中身をはみ出さないように設定
-                main.ClipsDescendants = true 
-                twWait(main, { Size = UDim2.new(0, WIN_W, 0, TOPBAR_H) }, TW_MED)
+                -- main は TOPBAR_H だけ残してサイズ変更 → 角は常に維持
+                twWait(main, { Size=UDim2.new(0,WIN_W,0,TOPBAR_H) }, TW_MED)
+                contentWrapper.Visible = false
             else
-                -- ⚡️ 大きく戻すアニメーションを開始
-                twWait(main, { Size = UDim2.new(0, WIN_W, 0, WIN_H) }, TW_MED)
-                -- ★ 完全に開ききった「後」で、切り取りをオフにする（これで角が綺麗に残る）
-                main.ClipsDescendants = false 
+                contentWrapper.Visible = true
+                twWait(main, { Size=UDim2.new(0,WIN_W,0,WIN_H) }, TW_MED)
             end
         end)
 
@@ -538,25 +701,19 @@ function Library:CreateWindow(config)
             Size=UDim2.new(0,28,1,0), Position=UDim2.new(0,30,0,0),
             AutoButtonColor=false, ZIndex=5,
         }, btnArea)
-
-        closeBtn.MouseEnter:Connect(function() tw(closeBtn,{TextColor3=Color3.fromRGB(255,95,87)}) end)
+        closeBtn.MouseEnter:Connect(function() tw(closeBtn,{TextColor3=rgb(255,95,87)}) end)
         closeBtn.MouseLeave:Connect(function() tw(closeBtn,{TextColor3=T.TEXT_M}) end)
-
         closeBtn.MouseButton1Click:Connect(function()
-            -- 閉じる時もClipを有効にして、シュッと消えるようにする
-            main.ClipsDescendants = true
-            twWait(main, { Size = UDim2.new(0, WIN_W, 0, 0), BackgroundTransparency = 1 }, TW_MED)
+            twWait(main, { Size=UDim2.new(0,WIN_W,0,0), BackgroundTransparency=1 }, TW_MED)
             gui:Destroy()
         end)
 
-        -- ── ドラッグ（トップバー限定）──────
+        -- ─── ドラッグ (topBar 限定、重複なし) ────
         do
             local drag, ds, sp
             topBar.InputBegan:Connect(function(i)
                 if i.UserInputType == Enum.UserInputType.MouseButton1 then
-                    drag = true
-                    ds   = i.Position
-                    sp   = main.Position
+                    drag = true; ds = i.Position; sp = main.Position
                 end
             end)
             UserInputService.InputChanged:Connect(function(i)
@@ -564,69 +721,92 @@ function Library:CreateWindow(config)
                     local d = i.Position - ds
                     main.Position = UDim2.new(
                         sp.X.Scale, sp.X.Offset + d.X,
-                        sp.Y.Scale, sp.Y.Offset + d.Y
-                    )
+                        sp.Y.Scale, sp.Y.Offset + d.Y)
                 end
             end)
             UserInputService.InputEnded:Connect(function(i)
-                if i.UserInputType == Enum.UserInputType.MouseButton1 then
-                    drag = false
-                end
+                if i.UserInputType == Enum.UserInputType.MouseButton1 then drag = false end
             end)
         end
 
-       -- ── サイドバー ──────────────────────
+        -- ─── サイドバー ───────────────────────────
         local sidebar = make("Frame", {
-            Size=UDim2.new(0,SIDEBAR_W,1,-TOPBAR_H),
-            Position=UDim2.new(0,0,0,TOPBAR_H),
-            BackgroundColor3=T.BG_SIDEBAR, BorderSizePixel=0, ZIndex=2,
-        }, main)
-        corner(12, sidebar) -- 左下の角丸
-
-        -- 境界線 (突き抜け防止サイズ)
+            Size = UDim2.new(0,SIDEBAR_W, 1, -USERPANEL_H),
+            Position = UDim2.new(0,0,0,0),
+            BackgroundColor3 = T.BG_SIDEBAR, BorderSizePixel = 0, ZIndex = 2,
+        }, contentWrapper)
+        corner(12, sidebar)
         make("Frame", {
-            Size=UDim2.new(0,1,1,-12), 
-            Position=UDim2.new(1,-1,0,0),
-            BackgroundColor3=T.BORDER, BorderSizePixel=0, ZIndex=3,
+            Size = UDim2.new(0,1,1,-12), Position = UDim2.new(1,-1,0,0),
+            BackgroundColor3 = T.BORDER, BorderSizePixel = 0, ZIndex = 3,
         }, sidebar)
 
         local sideScroll = make("ScrollingFrame", {
-            Size=UDim2.new(1,0,1,0), BackgroundTransparency=1, BorderSizePixel=0,
-            ScrollBarThickness=0, CanvasSize=UDim2.new(0,0,0,0),
-            AutomaticCanvasSize=Enum.AutomaticSize.Y,
+            Size = UDim2.new(1,0,1,0), BackgroundTransparency = 1, BorderSizePixel = 0,
+            ScrollBarThickness = 0, CanvasSize = UDim2.new(0,0,0,0),
+            AutomaticCanvasSize = Enum.AutomaticSize.Y,
         }, sidebar)
-        make("UIListLayout", { SortOrder=Enum.SortOrder.LayoutOrder, Padding=UDim.new(0,3) }, sideScroll)
+        make("UIListLayout", {
+            SortOrder = Enum.SortOrder.LayoutOrder, Padding = UDim.new(0,3),
+        }, sideScroll)
         pad(10,10,10,0, sideScroll)
 
-        -- ── ドラッグロジック ────────────────
-        local dragging, dragInput, dragStart, startPos
-        local function update(input)
-            local delta = input.Position - dragStart
-            main.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
+        -- ─── ユーザーパネル (左下) ────────────────
+        if UserPanel.Enabled then
+            local upFrame = make("Frame", {
+                Size = UDim2.new(0,SIDEBAR_W,0,USERPANEL_H),
+                Position = UDim2.new(0,0,1,-USERPANEL_H),
+                BackgroundColor3 = T.BG_TOPBAR, BorderSizePixel = 0, ZIndex = 3,
+            }, contentWrapper)
+            corner(12, upFrame)
+            make("Frame", {
+                Size = UDim2.new(1,0,0,1), Position = UDim2.new(0,0,0,0),
+                BackgroundColor3 = T.BORDER, BorderSizePixel = 0, ZIndex = 4,
+            }, upFrame)
+
+            -- アバターアイコン
+            local iconFrame = make("Frame", {
+                Size = UDim2.new(0,32,0,32), Position = UDim2.new(0,10,0.5,-16),
+                BackgroundColor3 = T.BG_ELEMENT, BorderSizePixel = 0, ZIndex = 4,
+            }, upFrame)
+            corner(16, iconFrame)
+            uiStroke(Accent, 1, iconFrame)
+
+            -- プロフィール画像
+            local userId = UserPanel.UserId or LocalPlayer.UserId
+            local thumbImg = make("ImageLabel", {
+                Size = UDim2.new(1,0,1,0),
+                Image = "rbxthumb://type=AvatarHeadShot&id="..tostring(userId).."&w=48&h=48",
+                BackgroundTransparency = 1, ZIndex = 5,
+            }, iconFrame)
+            corner(16, thumbImg)
+
+            make("TextLabel", {
+                Text = UserPanel.Name or LocalPlayer.DisplayName,
+                TextSize = 12, Font = Enum.Font.GothamBold,
+                TextColor3 = T.TEXT_P, BackgroundTransparency = 1,
+                Size = UDim2.new(1,-54,0,16), Position = UDim2.new(0,48,0,10),
+                TextXAlignment = Enum.TextXAlignment.Left, ZIndex = 5,
+            }, upFrame)
+            make("TextLabel", {
+                Text = UserPanel.Role or "@"..LocalPlayer.Name,
+                TextSize = 10, Font = Enum.Font.Gotham,
+                TextColor3 = T.ACCENT_TEXT, BackgroundTransparency = 1,
+                Size = UDim2.new(1,-54,0,14), Position = UDim2.new(0,48,0,28),
+                TextXAlignment = Enum.TextXAlignment.Left, ZIndex = 5,
+            }, upFrame)
         end
 
-        topbar.InputBegan:Connect(function(input)
-            if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-                dragging = true
-                dragStart = input.Position
-                startPos = main.Position
-                input.Changed:Connect(function()
-                    if input.UserInputState == Enum.UserInputState.End then dragging = false end
-                end)
-            end
-        end)
-
-        -- ── コンテンツエリア ────────────────
-        -- ※重複を削除して一本化
+        -- ─── コンテンツエリア ─────────────────────
         local contentArea = make("Frame", {
-            Size=UDim2.new(1,-SIDEBAR_W,1,-TOPBAR_H),
-            Position=UDim2.new(0,SIDEBAR_W,0,TOPBAR_H),
-            BackgroundColor3=T.BG_CONTENT, BorderSizePixel=0,
-            ClipsDescendants=false,  -- Dropdown用
-        }, main)
-        corner(12, contentArea) -- 右下の角丸
+            Size = UDim2.new(1,-SIDEBAR_W,1,-USERPANEL_H),
+            Position = UDim2.new(0,SIDEBAR_W,0,0),
+            BackgroundColor3 = T.BG_CONTENT, BorderSizePixel = 0,
+            ClipsDescendants = false,
+        }, contentWrapper)
+        corner(12, contentArea)
 
-        -- ── キーバインドトグル ────────────────
+        -- ─── キーバインドトグル ───────────────────
         local visible = true
         UserInputService.InputBegan:Connect(function(i, gpe)
             if gpe then return end
@@ -635,39 +815,43 @@ function Library:CreateWindow(config)
                 tw(main, {
                     Size = visible
                         and UDim2.new(0,WIN_W,0,WIN_H)
-                        or  UDim2.new(0,WIN_W,0,0)
+                        or  UDim2.new(0,WIN_W,0,0),
                 }, TW_MED)
+                contentWrapper.Visible = visible
             end
         end)
-        
-        -- タブ管理
+
+        -- 開くアニメーション
+        twWait(main, { Size=UDim2.new(0,WIN_W,0,WIN_H) }, TW_SLOW)
+
+        -- ─── タブ管理 ─────────────────────────────
         local pages    = {}
         local tabBtns  = {}
         local activeTab = nil
 
         local function switchTab(name)
-            for n, pg in pairs(pages)   do pg.Visible = false end
-            for n, tb in pairs(tabBtns) do
+            for _, pg in pairs(pages)   do pg.Visible = false end
+            for n,  tb in pairs(tabBtns) do
                 if n ~= name then tb.deactivate() end
             end
             if pages[name]   then pages[name].Visible = true end
-            if tabBtns[name] then tabBtns[name].activate()   end
+            if tabBtns[name] then tabBtns[name].activate() end
             activeTab = name
         end
 
-        -- ─────────────────────────────────
+        -- ══════════════════════════════
         --  Window オブジェクト
-        -- ─────────────────────────────────
+        -- ══════════════════════════════
         local Window = {}
 
+        -- FIX[7]: アイコンを画像ID or テキスト絵文字で対応
         function Window:CreateTab(name, icon)
-            icon = icon or "◎"
-
+            -- icon: テキスト絵文字 ("⚙") or 数値 (rbxassetid) or nil
             local order = 0
             for _ in pairs(tabBtns) do order += 1 end
 
             local btn = make("TextButton", {
-                Text="", Size=UDim2.new(1,-8,0,32),
+                Text="", Size=UDim2.new(1,-8,0,36),
                 BackgroundColor3=T.ACCENT, BackgroundTransparency=1,
                 BorderSizePixel=0, AutoButtonColor=false, LayoutOrder=order,
             }, sideScroll)
@@ -679,23 +863,40 @@ function Library:CreateWindow(config)
             }, btn)
             corner(2, accentBar)
 
-            make("TextLabel", {
-                Text=icon, TextSize=13, Font=Enum.Font.Gotham,
-                TextColor3=T.TEXT_M, BackgroundTransparency=1,
-                Size=UDim2.new(0,20,1,0), Position=UDim2.new(0,10,0,0),
-                TextXAlignment=Enum.TextXAlignment.Center,
-            }, btn)
+            -- アイコン表示
+            if type(icon) == "number" then
+                -- 画像ID
+                local imgLbl = make("ImageLabel", {
+                    Image = "rbxassetid://"..tostring(icon),
+                    Size = UDim2.new(0,18,0,18),
+                    Position = UDim2.new(0,10,0.5,-9),
+                    BackgroundTransparency = 1,
+                    ImageColor3 = T.TEXT_M,
+                }, btn)
+                -- アクティブ時に色変更
+                local function activateIcon() tw(imgLbl,{ImageColor3=T.ACCENT_TEXT}) end
+                local function deactivateIcon() tw(imgLbl,{ImageColor3=T.TEXT_M}) end
+                -- 後で activate/deactivate に連携
+                btn:SetAttribute("hasImageIcon", true)
+            else
+                make("TextLabel", {
+                    Text = icon or "◎",
+                    TextSize = 14, Font = Enum.Font.Gotham,
+                    TextColor3 = T.TEXT_M, BackgroundTransparency = 1,
+                    Size = UDim2.new(0,20,1,0), Position = UDim2.new(0,10,0,0),
+                    TextXAlignment = Enum.TextXAlignment.Center,
+                }, btn)
+            end
 
             local tabLbl = make("TextLabel", {
-                Text=name, TextSize=12, Font=Enum.Font.Gotham,
-                TextColor3=T.TEXT_S, BackgroundTransparency=1,
-                Size=UDim2.new(1,-36,1,0), Position=UDim2.new(0,34,0,0),
-                TextXAlignment=Enum.TextXAlignment.Left,
+                Text = name, TextSize = 12, Font = Enum.Font.Gotham,
+                TextColor3 = T.TEXT_S, BackgroundTransparency = 1,
+                Size = UDim2.new(1,-36,1,0), Position = UDim2.new(0,36,0,0),
+                TextXAlignment = Enum.TextXAlignment.Left,
             }, btn)
 
             local function activate()
-                tw(btn,      { BackgroundTransparency=0.88 })
-                tw(btn,      { BackgroundColor3=dimColor(T.ACCENT,0.4) })
+                tw(btn,      { BackgroundTransparency=0.88, BackgroundColor3=dimColor(T.ACCENT,0.4) })
                 tw(accentBar,{ BackgroundTransparency=0 })
                 tw(tabLbl,   { TextColor3=T.ACCENT_TEXT })
             end
@@ -717,39 +918,37 @@ function Library:CreateWindow(config)
 
             tabBtns[name] = { activate=activate, deactivate=deactivate }
 
-            -- ページ（Dropdownがはみ出せるようClipsDescendants=false）
             local page = make("ScrollingFrame", {
-                Size=UDim2.new(1,0,1,0),
-                BackgroundTransparency=1, BorderSizePixel=0,
-                ScrollBarThickness=3, ScrollBarImageColor3=T.BORDER,
-                CanvasSize=UDim2.new(0,0,0,0),
-                AutomaticCanvasSize=Enum.AutomaticSize.Y,
-                Visible=false,
-                ClipsDescendants=false,   -- ← Dropdown修正ポイント
+                Size = UDim2.new(1,0,1,0),
+                BackgroundTransparency = 1, BorderSizePixel = 0,
+                ScrollBarThickness = 3, ScrollBarImageColor3 = T.BORDER,
+                CanvasSize = UDim2.new(0,0,0,0),
+                AutomaticCanvasSize = Enum.AutomaticSize.Y,
+                Visible = false,
+                ClipsDescendants = false,
             }, contentArea)
             make("UIListLayout", {
-                SortOrder=Enum.SortOrder.LayoutOrder,
-                Padding=UDim.new(0,6),
+                SortOrder = Enum.SortOrder.LayoutOrder,
+                Padding = UDim.new(0,6),
             }, page)
             pad(12,12,12,12, page)
 
             pages[name] = page
             if activeTab == nil then switchTab(name) end
 
-            -- ─────────────────────────────
-            --  Tab オブジェクト
-            -- ─────────────────────────────
+            -- ──────────────────────────────
+            --  Tab コンポーネント
+            -- ──────────────────────────────
             local Tab = {}
             local elOrder = 0
             local function nO() elOrder += 1; return elOrder end
 
-            -- 共通ラッパー
             local function makeWrap(h, ord)
                 local w = make("Frame", {
-                    Size=UDim2.new(1,0,0,h),
-                    BackgroundColor3=T.BG_ELEMENT,
-                    BorderSizePixel=0, LayoutOrder=ord,
-                    ClipsDescendants=false,
+                    Size = UDim2.new(1,0,0,h),
+                    BackgroundColor3 = T.BG_ELEMENT,
+                    BorderSizePixel = 0, LayoutOrder = ord,
+                    ClipsDescendants = false,
                 }, page)
                 corner(8,w); uiStroke(T.BORDER,0.7,w); pad(0,0,14,14,w)
                 return w
@@ -816,98 +1015,87 @@ function Library:CreateWindow(config)
             end
 
             -- ─────────────────────────────
-            --  Slider (操作感改善版)
+            --  Slider
             -- ─────────────────────────────
             function Tab:Slider(name, range, callback, desc)
                 local minVal = range.min or range[1] or 0
                 local maxVal = range.max or range[2] or 100
-                local value  = minVal
+                local value  = range.default or minVal
 
                 local w = makeWrap(66, nO())
                 w.Size = UDim2.new(1,0,0,66)
 
-                -- 名前
                 make("TextLabel", {
                     Text=name, TextSize=13, Font=Enum.Font.GothamBold,
                     TextColor3=T.TEXT_P, BackgroundTransparency=1,
-                    Size=UDim2.new(0.65,0,0,20), Position=UDim2.new(0,10,0,6), -- 少し左にパディング
+                    Size=UDim2.new(0.65,0,0,20), Position=UDim2.new(0,0,0,6),
                     TextXAlignment=Enum.TextXAlignment.Left,
                 }, w)
 
-                -- 現在値
                 local valLbl = make("TextLabel", {
-                    Text=tostring(minVal),
+                    Text=tostring(value),
                     TextSize=12, Font=Enum.Font.GothamBold,
                     TextColor3=T.ACCENT_TEXT, BackgroundTransparency=1,
                     Size=UDim2.new(0.35,0,0,20), Position=UDim2.new(0.65,-10,0,6),
                     TextXAlignment=Enum.TextXAlignment.Right,
                 }, w)
 
-                -- トラック
                 local track = make("Frame", {
                     Size=UDim2.new(1,-20,0,5), Position=UDim2.new(0,10,0,36),
                     BackgroundColor3=T.BORDER, BorderSizePixel=0,
                 }, w)
                 corner(3, track)
-
                 local fill = make("Frame", {
                     Size=UDim2.new(0,0,1,0),
                     BackgroundColor3=T.ACCENT, BorderSizePixel=0,
                 }, track)
                 corner(3, fill)
-
                 local knob = make("Frame", {
-                    Size=UDim2.new(0,14,0,14), 
-                    -- Knobの親をtrackに変えるか、計算を合わせる
+                    Size=UDim2.new(0,14,0,14),
                     Position=UDim2.new(0,-7,0.5,-7),
-                    BackgroundColor3=T.TEXT_P, BorderSizePixel=0,
-                    ZIndex = 5,
+                    BackgroundColor3=T.TEXT_P, BorderSizePixel=0, ZIndex=5,
                 }, track)
                 corner(7, knob)
                 uiStroke(T.ACCENT, 1.5, knob)
-
                 makeDesc(desc, w)
 
-                local dragging = false
+                -- 初期値反映
+                local initRatio = (value - minVal) / (maxVal - minVal)
+                fill.Size     = UDim2.new(initRatio, 0, 1, 0)
+                knob.Position = UDim2.new(initRatio, -7, 0.5, -7)
 
+                local dragging = false
                 local function updateByX(absX)
                     local tPos  = track.AbsolutePosition.X
                     local tSize = track.AbsoluteSize.X
                     if tSize <= 0 then return end
                     local ratio = math.clamp((absX - tPos) / tSize, 0, 1)
                     value = math.round(minVal + (maxVal - minVal) * ratio)
-                    
-                    valLbl.Text = tostring(value)
-                    fill.Size   = UDim2.new(ratio, 0, 1, 0)
-                    knob.Position = UDim2.new(ratio, -7, 0.5, -7) -- Knobの位置を直接制御
-                    
+                    valLbl.Text   = tostring(value)
+                    fill.Size     = UDim2.new(ratio, 0, 1, 0)
+                    knob.Position = UDim2.new(ratio, -7, 0.5, -7)
                     if callback then callback(value) end
                 end
 
-                -- ★判定を w (66ピクセルの高さ全体) に変更！
                 w.InputBegan:Connect(function(i)
                     if i.UserInputType == Enum.UserInputType.MouseButton1 then
-                        dragging = true
-                        updateByX(i.Position.X)
+                        dragging = true; updateByX(i.Position.X)
                     end
                 end)
-
                 UserInputService.InputChanged:Connect(function(i)
                     if dragging and i.UserInputType == Enum.UserInputType.MouseMovement then
                         updateByX(i.Position.X)
                     end
                 end)
-
                 UserInputService.InputEnded:Connect(function(i)
                     if i.UserInputType == Enum.UserInputType.MouseButton1 then
                         dragging = false
                     end
                 end)
-
                 w.MouseEnter:Connect(function() tw(w,{BackgroundColor3=T.BG_ELEMENT_H}) end)
                 w.MouseLeave:Connect(function() tw(w,{BackgroundColor3=T.BG_ELEMENT}) end)
             end
-            
+
             -- ─────────────────────────────
             --  Button
             -- ─────────────────────────────
@@ -957,18 +1145,17 @@ function Library:CreateWindow(config)
             end
 
             -- ─────────────────────────────
-            --  Dropdown  ★ ZIndex・親構造修正
+            --  Dropdown
             -- ─────────────────────────────
             function Tab:Dropdown(name, options, callback, desc)
                 local open = false
                 local selectedOpt = nil
 
-                -- ★ ラッパーはClipsDescendants=false必須
                 local w = make("Frame", {
                     Size=UDim2.new(1,0,0,52),
                     BackgroundColor3=T.BG_ELEMENT,
                     BorderSizePixel=0, LayoutOrder=nO(),
-                    ClipsDescendants=false,   -- ← ここが重要
+                    ClipsDescendants=false,
                 }, page)
                 corner(8,w); uiStroke(T.BORDER,0.7,w); pad(0,0,14,14,w)
 
@@ -987,7 +1174,6 @@ function Library:CreateWindow(config)
                     Size=UDim2.new(1,-30,0,16), Position=UDim2.new(0,0,0,30),
                     TextXAlignment=Enum.TextXAlignment.Left,
                 }, w)
-
                 local arrow = make("TextLabel", {
                     Text="▾", TextSize=12, Font=Enum.Font.Gotham,
                     TextColor3=T.ACCENT, BackgroundTransparency=1,
@@ -995,28 +1181,23 @@ function Library:CreateWindow(config)
                     TextXAlignment=Enum.TextXAlignment.Center,
                 }, w)
 
-                -- ★ ドロップリストを gui 直下に置いてZIndex競合を回避
                 local dropList = make("Frame", {
                     Size=UDim2.new(0,0,0,0),
-                    BackgroundColor3=Color3.fromRGB(8,20,38),
+                    BackgroundColor3=rgb(8,20,38),
                     BorderSizePixel=0, ZIndex=200,
-                    ClipsDescendants=true,
-                    Visible=false,
+                    ClipsDescendants=true, Visible=false,
                 }, gui)
                 corner(8, dropList)
                 uiStroke(T.BORDER, 0.7, dropList)
-
                 make("UIListLayout", {
-                    SortOrder=Enum.SortOrder.LayoutOrder,
-                    Padding=UDim.new(0,2),
+                    SortOrder=Enum.SortOrder.LayoutOrder, Padding=UDim.new(0,2),
                 }, dropList)
                 pad(4,4,6,6, dropList)
 
                 local ITEM_H   = 28
                 local LIST_PAD = 8
                 local totalH   = LIST_PAD + #options * (ITEM_H + 2)
-                -- wの実ピクセル幅（ScreenGui基準）
-                local DROP_W   = 0   -- 開くときAbsoluteで取得
+                local DROP_W   = 0
 
                 for i, opt in ipairs(options) do
                     local ob = make("TextButton", {
@@ -1024,13 +1205,10 @@ function Library:CreateWindow(config)
                         TextColor3=T.TEXT_S,
                         BackgroundColor3=T.BG_ELEMENT, BackgroundTransparency=1,
                         BorderSizePixel=0, AutoButtonColor=false,
-                        Size=UDim2.new(1,0,0,ITEM_H),
-                        LayoutOrder=i,
-                        TextXAlignment=Enum.TextXAlignment.Left,
-                        ZIndex=201,
+                        Size=UDim2.new(1,0,0,ITEM_H), LayoutOrder=i,
+                        TextXAlignment=Enum.TextXAlignment.Left, ZIndex=201,
                     }, dropList)
                     pad(0,0,6,0,ob); corner(6,ob)
-
                     ob.MouseEnter:Connect(function()
                         tw(ob,{BackgroundTransparency=0.82, BackgroundColor3=T.ACCENT})
                         tw(ob,{TextColor3=T.ACCENT_TEXT})
@@ -1043,43 +1221,224 @@ function Library:CreateWindow(config)
                         selectedOpt = opt
                         selLbl.Text = opt
                         tw(selLbl,{TextColor3=T.ACCENT_TEXT})
-                        -- 閉じる
                         open = false
                         tw(dropList,{Size=UDim2.new(0,DROP_W,0,0)}, TW_MED)
                         tw(arrow,{Rotation=0})
-                        task.delay(0.22, function() dropList.Visible=false end)
+                        task.delay(0.22, function()
+                            if dropList and dropList.Parent then dropList.Visible=false end
+                        end)
                         if callback then callback(opt) end
                     end)
                 end
 
-                -- ヘッダークリック
                 local hb = make("TextButton", {
                     Text="", Size=UDim2.new(1,0,1,0),
                     BackgroundTransparency=1, BorderSizePixel=0,
                     AutoButtonColor=false, ZIndex=5,
                 }, w)
-
                 hb.MouseButton1Click:Connect(function()
                     open = not open
                     if open then
-                        -- ★ AbsolutePositionで正確な座標を取得
                         local absPos  = w.AbsolutePosition
                         local absSize = w.AbsoluteSize
                         DROP_W = absSize.X
-
                         dropList.Position = UDim2.new(0, absPos.X, 0, absPos.Y + absSize.Y + 4)
                         dropList.Size     = UDim2.new(0, DROP_W, 0, 0)
                         dropList.Visible  = true
-
                         tw(dropList,{Size=UDim2.new(0,DROP_W,0,totalH)}, TW_MED)
                         tw(arrow,{Rotation=180})
                     else
                         tw(dropList,{Size=UDim2.new(0,DROP_W,0,0)}, TW_MED)
                         tw(arrow,{Rotation=0})
-                        task.delay(0.22, function() dropList.Visible=false end)
+                        task.delay(0.22, function()
+                            if dropList and dropList.Parent then dropList.Visible=false end
+                        end)
                     end
                 end)
+                w.MouseEnter:Connect(function() tw(w,{BackgroundColor3=T.BG_ELEMENT_H}) end)
+                w.MouseLeave:Connect(function() tw(w,{BackgroundColor3=T.BG_ELEMENT}) end)
+            end
 
+            -- ─────────────────────────────
+            --  Input (NEW)
+            -- ─────────────────────────────
+            function Tab:Input(name, placeholder, callback, desc)
+                local w = makeWrap(64, nO())
+                w.Size = UDim2.new(1,0,0,64)
+
+                make("TextLabel", {
+                    Text=name, TextSize=13, Font=Enum.Font.GothamBold,
+                    TextColor3=T.TEXT_P, BackgroundTransparency=1,
+                    Size=UDim2.new(1,0,0,20), Position=UDim2.new(0,0,0,6),
+                    TextXAlignment=Enum.TextXAlignment.Left,
+                }, w)
+
+                local inputBg = make("Frame", {
+                    Size=UDim2.new(1,0,0,28), Position=UDim2.new(0,0,0,30),
+                    BackgroundColor3=T.BG_MAIN, BorderSizePixel=0,
+                }, w)
+                corner(6, inputBg)
+                local iStroke = uiStroke(T.BORDER, 0.8, inputBg)
+
+                local tb = make("TextBox", {
+                    PlaceholderText = placeholder or "入力...",
+                    Text = "",
+                    TextSize=12, Font=Enum.Font.Gotham,
+                    TextColor3=T.TEXT_P, PlaceholderColor3=T.TEXT_M,
+                    BackgroundTransparency=1,
+                    Size=UDim2.new(1,-12,1,0), Position=UDim2.new(0,6,0,0),
+                    TextXAlignment=Enum.TextXAlignment.Left,
+                    ClearTextOnFocus=false,
+                }, inputBg)
+
+                tb.Focused:Connect(function()  tw(iStroke,{Color=Accent}) end)
+                tb.FocusLost:Connect(function(enter)
+                    tw(iStroke,{Color=T.BORDER})
+                    if callback then callback(tb.Text, enter) end
+                end)
+                makeDesc(desc, w)
+                w.MouseEnter:Connect(function() tw(w,{BackgroundColor3=T.BG_ELEMENT_H}) end)
+                w.MouseLeave:Connect(function() tw(w,{BackgroundColor3=T.BG_ELEMENT}) end)
+            end
+
+            -- ─────────────────────────────
+            --  ColorPicker (NEW) - RGBスライダー3本
+            -- ─────────────────────────────
+            function Tab:ColorPicker(name, defaultColor, callback, desc)
+                local color = defaultColor or rgb(255, 255, 255)
+                local r = math.floor(color.R * 255)
+                local g = math.floor(color.G * 255)
+                local b = math.floor(color.B * 255)
+
+                local OPEN_H  = 160
+                local CLOSE_H = 52
+                local open    = false
+
+                local w = make("Frame", {
+                    Size=UDim2.new(1,0,0,CLOSE_H),
+                    BackgroundColor3=T.BG_ELEMENT,
+                    BorderSizePixel=0, LayoutOrder=nO(),
+                    ClipsDescendants=true,
+                }, page)
+                corner(8,w); uiStroke(T.BORDER,0.7,w); pad(0,0,14,14,w)
+
+                make("TextLabel", {
+                    Text=name, TextSize=13, Font=Enum.Font.GothamBold,
+                    TextColor3=T.TEXT_P, BackgroundTransparency=1,
+                    Size=UDim2.new(1,-60,0,20), Position=UDim2.new(0,0,0,8),
+                    TextXAlignment=Enum.TextXAlignment.Left,
+                }, w)
+
+                -- カラープレビュー
+                local preview = make("Frame", {
+                    Size=UDim2.new(0,24,0,24), Position=UDim2.new(1,-26,0,4),
+                    BackgroundColor3=color, BorderSizePixel=0,
+                }, w)
+                corner(6, preview)
+                uiStroke(T.BORDER, 0.8, preview)
+
+                local arrow = make("TextLabel", {
+                    Text="▾", TextSize=12, Font=Enum.Font.Gotham,
+                    TextColor3=T.ACCENT, BackgroundTransparency=1,
+                    Size=UDim2.new(0,16,0,16), Position=UDim2.new(1,-44,0,8),
+                    TextXAlignment=Enum.TextXAlignment.Center,
+                }, w)
+
+                local function updateColor()
+                    color = rgb(r, g, b)
+                    preview.BackgroundColor3 = color
+                    if callback then callback(color) end
+                end
+
+                -- RGBスライダー3本を生成
+                local sliderData = {
+                    { label="R", color=rgb(220,60,60),  get=function() return r end,
+                      set=function(v) r=v end },
+                    { label="G", color=rgb(60,200,80),  get=function() return g end,
+                      set=function(v) g=v end },
+                    { label="B", color=rgb(60,130,255), get=function() return b end,
+                      set=function(v) b=v end },
+                }
+
+                for i, sd in ipairs(sliderData) do
+                    local sy = CLOSE_H + 4 + (i-1)*32
+
+                    make("TextLabel", {
+                        Text=sd.label, TextSize=11, Font=Enum.Font.GothamBold,
+                        TextColor3=sd.color, BackgroundTransparency=1,
+                        Size=UDim2.new(0,14,0,20), Position=UDim2.new(0,0,0,sy+6),
+                        TextXAlignment=Enum.TextXAlignment.Left,
+                    }, w)
+
+                    local valL = make("TextLabel", {
+                        Text=tostring(sd.get()),
+                        TextSize=11, Font=Enum.Font.GothamBold,
+                        TextColor3=T.TEXT_S, BackgroundTransparency=1,
+                        Size=UDim2.new(0,28,0,20), Position=UDim2.new(1,-28,0,sy+6),
+                        TextXAlignment=Enum.TextXAlignment.Right,
+                    }, w)
+
+                    local trk = make("Frame", {
+                        Size=UDim2.new(1,-52,0,4),
+                        Position=UDim2.new(0,18,0,sy+14),
+                        BackgroundColor3=T.BORDER, BorderSizePixel=0,
+                    }, w)
+                    corner(2, trk)
+                    local fl = make("Frame", {
+                        Size=UDim2.new(sd.get()/255,0,1,0),
+                        BackgroundColor3=sd.color, BorderSizePixel=0,
+                    }, trk)
+                    corner(2, fl)
+                    local kn = make("Frame", {
+                        Size=UDim2.new(0,12,0,12),
+                        Position=UDim2.new(sd.get()/255,-6,0.5,-6),
+                        BackgroundColor3=T.TEXT_P, BorderSizePixel=0, ZIndex=5,
+                    }, trk)
+                    corner(6, kn)
+
+                    local dragging = false
+                    local function updateSlider(absX)
+                        local tp = trk.AbsolutePosition.X
+                        local ts = trk.AbsoluteSize.X
+                        if ts <= 0 then return end
+                        local ratio = math.clamp((absX-tp)/ts, 0, 1)
+                        local val   = math.round(ratio * 255)
+                        sd.set(val)
+                        valL.Text    = tostring(val)
+                        fl.Size      = UDim2.new(ratio,0,1,0)
+                        kn.Position  = UDim2.new(ratio,-6,0.5,-6)
+                        updateColor()
+                    end
+
+                    trk.InputBegan:Connect(function(inp)
+                        if inp.UserInputType == Enum.UserInputType.MouseButton1 then
+                            dragging = true; updateSlider(inp.Position.X)
+                        end
+                    end)
+                    UserInputService.InputChanged:Connect(function(inp)
+                        if dragging and inp.UserInputType == Enum.UserInputType.MouseMovement then
+                            updateSlider(inp.Position.X)
+                        end
+                    end)
+                    UserInputService.InputEnded:Connect(function(inp)
+                        if inp.UserInputType == Enum.UserInputType.MouseButton1 then
+                            dragging = false
+                        end
+                    end)
+                end
+
+                makeDesc(desc, w)
+
+                -- 開閉
+                local hb = make("TextButton", {
+                    Text="", Size=UDim2.new(1,0,0,CLOSE_H),
+                    BackgroundTransparency=1, BorderSizePixel=0, AutoButtonColor=false,
+                }, w)
+                hb.MouseButton1Click:Connect(function()
+                    open = not open
+                    tw(w, { Size=UDim2.new(1,0,0, open and OPEN_H or CLOSE_H) }, TW_MED)
+                    tw(arrow, { Rotation=open and 180 or 0 })
+                end)
                 w.MouseEnter:Connect(function() tw(w,{BackgroundColor3=T.BG_ELEMENT_H}) end)
                 w.MouseLeave:Connect(function() tw(w,{BackgroundColor3=T.BG_ELEMENT}) end)
             end
@@ -1137,10 +1496,9 @@ function Library:CreateWindow(config)
                 }, w)
                 hb.MouseButton1Click:Connect(function()
                     open = not open
-                    tw(w,  { Size=UDim2.new(1,0,0, open and OPEN_H or CLOSE_H) }, TW_MED)
+                    tw(w,    { Size=UDim2.new(1,0,0, open and OPEN_H or CLOSE_H) }, TW_MED)
                     tw(arrow,{ Rotation=open and 180 or 0 })
                 end)
-
                 w.MouseEnter:Connect(function() tw(w,{BackgroundColor3=T.BG_ELEMENT_H}) end)
                 w.MouseLeave:Connect(function() tw(w,{BackgroundColor3=T.BG_ELEMENT}) end)
             end
@@ -1173,14 +1531,19 @@ function Library:CreateWindow(config)
                 end
             end
 
+            -- Notify をタブから呼べるショートカット
+            function Tab:Notify(title, content, duration)
+                doNotify(title, content, duration)
+            end
+
             return Tab
         end -- CreateTab
 
         return Window
     end -- buildMainGUI
 
-   -- ══════════════════════════════════════
-    --  シーケンス実行 (ここを1つに統合)
+    -- ══════════════════════════════════════
+    --  シーケンス実行
     -- ══════════════════════════════════════
     local realWindow = nil
     local queue      = {}
@@ -1188,7 +1551,7 @@ function Library:CreateWindow(config)
     local function runBuild()
         realWindow = buildMainGUI()
         for _, fn in ipairs(queue) do
-            task.spawn(fn) -- spawnよりtask.spawnの方が速くて安全
+            task.spawn(fn)
         end
     end
 
@@ -1198,7 +1561,7 @@ function Library:CreateWindow(config)
         runBuild()
     end)
 
-    -- プロキシ（非同期でキューに溜める）
+    -- プロキシ
     local proxy = {}
 
     function proxy:CreateTab(name, icon)
@@ -1210,10 +1573,14 @@ function Library:CreateWindow(config)
             if realWindow and not realTab then
                 realTab = realWindow:CreateTab(name, icon)
                 for _, fn in ipairs(tabQueue) do fn() end
+                tabQueue = {}
             end
         end
 
-        local methods = {"Toggle","Slider","Button","Dropdown","Accordion","Separator"}
+        local methods = {
+            "Toggle","Slider","Button","Dropdown",
+            "Accordion","Separator","Input","ColorPicker","Notify"
+        }
         for _, m in ipairs(methods) do
             tabProxy[m] = function(self, ...)
                 local args = {...}
@@ -1232,7 +1599,18 @@ function Library:CreateWindow(config)
         return tabProxy
     end
 
-    return proxy
-end -- CreateWindowの締め
+    function proxy:Notify(title, content, duration)
+        if _notifyFn then
+            _notifyFn(title, content, duration)
+        else
+            -- まだ初期化前ならキューに積む
+            table.insert(queue, function()
+                _notifyFn(title, content, duration)
+            end)
+        end
+    end
 
-return Library -- ライブラリ自体の締め
+    return proxy
+end
+
+return Library
