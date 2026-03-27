@@ -546,40 +546,30 @@ function Library:CreateWindow(config)
             end)
         end
 
-        -- ── サイドバー ──────────────────────
--- ── サイドバー ──────────────────────
+       -- ── サイドバー ──────────────────────
         local sidebar = make("Frame", {
             Size=UDim2.new(0,SIDEBAR_W,1,-TOPBAR_H),
             Position=UDim2.new(0,0,0,TOPBAR_H),
             BackgroundColor3=T.BG_SIDEBAR, BorderSizePixel=0, ZIndex=2,
         }, main)
-        corner(12, sidebar) -- 下の角丸対策
+        corner(12, sidebar) -- 左下の角丸
 
-        -- 境界線（ここも Size を微調整して突き抜け防止）
+        -- 境界線 (突き抜け防止サイズ)
         make("Frame", {
             Size=UDim2.new(0,1,1,-12), 
             Position=UDim2.new(1,-1,0,0),
             BackgroundColor3=T.BORDER, BorderSizePixel=0, ZIndex=3,
         }, sidebar)
 
-        -- タブを並べるためのスクロールエリア
         local sideScroll = make("ScrollingFrame", {
             Size=UDim2.new(1,0,1,0), BackgroundTransparency=1, BorderSizePixel=0,
             ScrollBarThickness=0, CanvasSize=UDim2.new(0,0,0,0),
             AutomaticCanvasSize=Enum.AutomaticSize.Y,
         }, sidebar)
-        
-        -- レイアウト設定
-        make("UIListLayout", { 
-            SortOrder=Enum.SortOrder.LayoutOrder, 
-            Padding=UDim.new(0,3) 
-        }, sideScroll)
-        
-        -- 余白設定
+        make("UIListLayout", { SortOrder=Enum.SortOrder.LayoutOrder, Padding=UDim.new(0,3) }, sideScroll)
         pad(10,10,10,0, sideScroll)
 
-        -- ── 【ここが抜けてた「中間」だ】 ────────────────
-        -- ウィンドウ移動のドラッグロジック（ここに入れるのが一般的）
+        -- ── ドラッグロジック ────────────────
         local dragging, dragInput, dragStart, startPos
         local function update(input)
             local delta = input.Position - dragStart
@@ -597,22 +587,17 @@ function Library:CreateWindow(config)
             end
         end)
 
- -- ── コンテンツエリア ────────────────
-        -- DropdownがUIの外に出られるようZIndexBehavior=Globalのフレームを使う
+        -- ── コンテンツエリア ────────────────
+        -- ※重複を削除して一本化
         local contentArea = make("Frame", {
             Size=UDim2.new(1,-SIDEBAR_W,1,-TOPBAR_H),
             Position=UDim2.new(0,SIDEBAR_W,0,TOPBAR_H),
             BackgroundColor3=T.BG_CONTENT, BorderSizePixel=0,
-            ClipsDescendants=false,   -- Dropdown表示のためfalse
+            ClipsDescendants=false,  -- Dropdown用
         }, main)
+        corner(12, contentArea) -- 右下の角丸
 
-        -- ⚡️ ここを追加：コンテンツエリア自体にも角丸を入れる
-        corner(12, contentArea) 
-
-        -- ⚡️ サイドバー（もしあれば）にも同じように追加しろ
-        -- sidebar の作成箇所にも corner(12, sidebar) を入れるんだ
-        
-        -- キーバインドトグル
+        -- ── キーバインドトグル ────────────────
         local visible = true
         UserInputService.InputBegan:Connect(function(i, gpe)
             if gpe then return end
@@ -625,7 +610,7 @@ function Library:CreateWindow(config)
                 }, TW_MED)
             end
         end)
-
+        
         -- タブ管理
         local pages    = {}
         local tabBtns  = {}
