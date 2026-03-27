@@ -1,4 +1,5 @@
 -- [[ MOON UI v3.0: Astralis Edition Example ]] --
+-- Developer: ryuryupad
 local Players          = game:GetService("Players")
 local UserInputService = game:GetService("UserInputService")
 local LocalPlayer      = Players.LocalPlayer
@@ -20,7 +21,7 @@ local HWID       = gethwid and gethwid()
                    or game:GetService("RbxAnalyticsService"):GetClientId()
 local correctKey = "KOHUB-TEST-KEY-2026"
 
--- ── 3. ウィンドウ作成 ────────────────────────────
+-- ── 3. ウィンドウ作成 (最新テーマ機能適用) ────────────────────
 local Window = Library:CreateWindow({
     Title    = "ASTRALIS",
     Subtitle = "v6.0  •  by ryuryupad",
@@ -28,12 +29,19 @@ local Window = Library:CreateWindow({
     Keybind  = Enum.KeyCode.RightShift,
     Neon     = true,
 
-    -- グラデーション枠を使いたい場合はこちら (任意)
-    -- Border = { Type = "rainbow" },
-    -- Border = { Type = "gradient", Colors = { Color3.fromRGB(80,160,255), Color3.fromRGB(160,80,255) } },
+    -- 【NEW: テーマカスタマイズ】
+    -- 汎用ライブラリとして、ここで色を自由に変えられるようになったぜ
+    BackgroundColor = Color3.fromRGB(5, 14, 26),    -- メイン背景
+    TopbarColor      = Color3.fromRGB(8, 18, 32),    -- トップバー
+    SidebarColor     = Color3.fromRGB(6, 15, 28),    -- サイドバー
+    ContentColor     = Color3.fromRGB(4, 11, 22),    -- コンテンツエリア
+    ElementColor     = Color3.fromRGB(10, 22, 38),   -- ボタン等の背景
+
+    -- グラデーション枠 (虹色をやめたい場合は Type = "none" にする)
+    Border = { Type = "none" }, 
 
     -- 左下ユーザーパネル (任意)
-    -- UserPanel = { Enabled = true, Role = "Owner & Developer" },
+    UserPanel = { Enabled = true, Role = "Owner & Developer" },
 
     KeySystem = {
         Enabled   = true,
@@ -68,7 +76,6 @@ MainTab:Slider("Jump Power", { min=50, max=400 }, function(v)
     end
 end, "ジャンプ力を変更します")
 
--- FIX: コネクション漏れを修正 (Toggle毎に接続が増殖しない)
 local infJumpConn
 MainTab:Toggle("Infinite Jump", false, function(v)
     _G.InfJump = v
@@ -117,6 +124,7 @@ SettingsTab:Separator("SYSTEM")
 
 SettingsTab:Accordion("Astralis v6 Changelogs", {
     "v6.0: MOON UI v3.0 へのアップグレード",
+    "v6.0: 背景色・各パーツカラーの外部指定に対応", -- 追加
     "v6.0: ColorPicker / Notify / Input 追加",
     "v6.0: グラデーション・虹色枠対応",
     "v6.0: 最小化バグ・認証灰色バグ修正",
@@ -131,7 +139,6 @@ end)
 
 SettingsTab:Button("Destroy UI", function()
     local pg = LocalPlayer:FindFirstChild("PlayerGui")
-    -- v3.0 では "moon_ui" に変更
     local ui = pg and (pg:FindFirstChild("moon_ui") or pg:FindFirstChild("ryu_ui"))
     if ui then ui:Destroy() end
 end)
