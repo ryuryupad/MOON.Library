@@ -1113,20 +1113,20 @@ function Library:CreateWindow(config)
         return Window
     end -- buildMainGUI
 
-    -- ════════════════════════════
-    --  シーケンス実行
-    -- ════════════════════════════
+   -- ══════════════════════════════════════
+    --  シーケンス実行 (ここを1つに統合)
+    -- ══════════════════════════════════════
     local realWindow = nil
     local queue      = {}
 
     local function runBuild()
         realWindow = buildMainGUI()
         for _, fn in ipairs(queue) do
-            spawn(fn)
+            task.spawn(fn) -- spawnよりtask.spawnの方が速くて安全
         end
     end
 
-    spawn(function()
+    task.spawn(function()
         playIntro()
         if KeyConfig.Enabled then showKeySystem() end
         runBuild()
@@ -1138,71 +1138,6 @@ function Library:CreateWindow(config)
     function proxy:CreateTab(name, icon)
         local tabProxy = {}
         local realTab  = nil
-        local tabQueue = {}
-
-        local function ensureTab()
-            if realWindow and not realTab then
-                realTab = realWindow:CreateTab(name, icon)
-                for _, fn in ipairs(tabQueue) do fn() end
-            end
-        end
-
-        for _, m in ipairs({"Toggle","Slider","Button","Dropdown","Accordion","Separator"}) do
-            tabProxy[m] = function(self, ...)
-                local args = {...}
-                if realTab then
-                    realTab[m](realTab, table.unpack(args))
-                else
-                    table.insert(tabQueue, function()
-                        ensureTab()
-                        if realTab then realTab[m](realTab, table.unpack(args)) end
-                    end)
-                end
-            end
-        end
-
-        table.insert(queue, ensureTab)
-        return tabProxy
-    end
-
-    return proxy
-end
-
-return Library
-
-    -- ══════════════════════════════════════
-    --  シーケンス実行
-    -- ══════════════════════════════════════
-    spawn(function()
-        -- 1. 起動アニメ
-        playIntro()
-
-        -- 2. KEYシステム（有効なら）
-        if KeyConfig.Enabled then
-            showKeySystem()
-        end
-
-        -- 3. メインGUI
-        buildMainGUI()
-    end)
-
-    -- CreateWindowはすぐWindowオブジェクトを返せないため
-    -- 非同期でGUIが構築される。Windowの参照を渡す中継オブジェクトを返す
-    local proxy = {}
-    local realWindow = nil
-    local queue = {}
-
-    -- buildMainGUI完了まで呼び出しをキューに溜める
-    local originalBuild = buildMainGUI
-    buildMainGUI = function()
-        realWindow = originalBuild()
-        for _, fn in ipairs(queue) do fn() end
-    end
-
-    function proxy:CreateTab(name, icon)
-        -- Tabオブジェクトのプロキシ
-        local tabProxy = {}
-        local realTab = nil
         local tabQueue = {}
 
         local function ensureTab()
@@ -1232,6 +1167,6 @@ return Library
     end
 
     return proxy
-end
+end -- CreateWindowの締め
 
-return Library
+return Library -- ライブラリ自体の締め
