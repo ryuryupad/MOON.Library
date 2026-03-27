@@ -3,7 +3,7 @@
 -- ╚══════════════════════════════════════════════════════╝
 
 local success, Library = pcall(function()
-    return loadstring(game:HttpGet("https://raw.githubusercontent.com/ryuryupad/MOON.Library/main/Library.lua"))()
+    return loadstring(game:HttpGet("https://pastefy.app/EdTjYLDJ"))()
 end)
 
 if not success or not Library then
