@@ -228,8 +228,8 @@ function Library:CreateWindow(config)
         overlay:Destroy()
     end
 
-    -- ════════════════════════════
-    --  2. KEYシステム
+-- ════════════════════════════
+    --  2. KEYシステム (改良版: レスポンシブレイアウト)
     -- ════════════════════════════
     local function showKeySystem()
         local successSignal = Instance.new("BindableEvent")
@@ -241,9 +241,10 @@ function Library:CreateWindow(config)
             BorderSizePixel=0, ZIndex=50,
         }, gui)
 
+        -- 縦サイズを少し広げて(230)ボタンの圧迫感を解消
         local card = make("Frame", {
-            Size=UDim2.new(0,380,0,210),
-            Position=UDim2.new(0.5,-190,0.5,-105),
+            Size=UDim2.new(0,380,0,230), 
+            Position=UDim2.new(0.5,-190,0.5,-115),
             BackgroundColor3=T.BG_MAIN,
             BorderSizePixel=0, ZIndex=51,
             BackgroundTransparency=1,
@@ -258,10 +259,6 @@ function Library:CreateWindow(config)
             BorderSizePixel=0, ZIndex=52,
         }, card)
         corner(14, topLine)
-        make("Frame", {
-            Size=UDim2.new(1,0,0.5,0), Position=UDim2.new(0,0,0,1),
-            BackgroundColor3=Accent, BorderSizePixel=0, ZIndex=52,
-        }, topLine)
 
         pad(20,20,24,24, card)
 
@@ -272,6 +269,7 @@ function Library:CreateWindow(config)
             Size=UDim2.new(1,0,0,26), Position=UDim2.new(0,0,0,14),
             TextXAlignment=Enum.TextXAlignment.Left, ZIndex=53,
         }, card)
+        
         make("TextLabel", {
             Text=KeyConfig.Hint or "有効なキーを入力してください",
             TextSize=11, Font=Enum.Font.Gotham,
@@ -307,17 +305,56 @@ function Library:CreateWindow(config)
             TextXAlignment=Enum.TextXAlignment.Left, ZIndex=53,
         }, card)
 
+        -- ══ ボタンの動的レイアウト ══
+        local targetUrl = KeyConfig.GetKeyURL or (KeyConfig.Hint and KeyConfig.Hint:match("https://%S+"))
+        
         local submitBtn = make("TextButton", {
             Text="Confirm", TextSize=13, Font=Enum.Font.GothamBold,
             TextColor3=T.BG_MAIN, BackgroundColor3=Accent,
             BorderSizePixel=0, AutoButtonColor=false,
-            Size=UDim2.new(1,0,0,36), Position=UDim2.new(0,0,0,152),
             ZIndex=53,
         }, card)
         corner(8, submitBtn)
+
+        if targetUrl then
+            -- Get Keyがある場合は横並び (Position 165でゆとりを確保)
+            submitBtn.Size = UDim2.new(0.5, -5, 0, 38)
+            submitBtn.Position = UDim2.new(0.5, 5, 0, 165)
+
+            local getKeyBtn = make("TextButton", {
+                Text="Get Key", TextSize=13, Font=Enum.Font.GothamBold,
+                TextColor3=T.TEXT_P, BackgroundColor3=T.BG_ELEMENT,
+                BorderSizePixel=0, AutoButtonColor=false,
+                Size=UDim2.new(0.5, -5, 0, 38), Position=UDim2.new(0, 0, 0, 165),
+                ZIndex=53,
+            }, card)
+            corner(8, getKeyBtn)
+            uiStroke(T.BORDER, 0.8, getKeyBtn)
+
+            getKeyBtn.MouseButton1Click:Connect(function()
+                if setclipboard then
+                    setclipboard(targetUrl)
+                    local old = getKeyBtn.Text
+                    getKeyBtn.Text = "Copied!"
+                    getKeyBtn.TextColor3 = T.STATUS_GREEN
+                    task.wait(1.5)
+                    getKeyBtn.Text = old
+                    getKeyBtn.TextColor3 = T.TEXT_P
+                end
+            end)
+            
+            getKeyBtn.MouseEnter:Connect(function() tw(getKeyBtn, {BackgroundColor3=T.BG_ELEMENT_H}) end)
+            getKeyBtn.MouseLeave:Connect(function() tw(getKeyBtn, {BackgroundColor3=T.BG_ELEMENT}) end)
+        else
+            -- 通常時 (フルサイズ)
+            submitBtn.Size = UDim2.new(1, 0, 0, 38)
+            submitBtn.Position = UDim2.new(0, 0, 0, 165)
+        end
+
         submitBtn.MouseEnter:Connect(function() tw(submitBtn,{BackgroundColor3=lightenColor(Accent,0.1)}) end)
         submitBtn.MouseLeave:Connect(function() tw(submitBtn,{BackgroundColor3=Accent}) end)
 
+        -- ══ 認証ロジック ══
         local function validateKey(key)
             key = key:match("^%s*(.-)%s*$")
             if KeyConfig.Key and key == KeyConfig.Key then return true end
@@ -336,36 +373,28 @@ function Library:CreateWindow(config)
         submitBtn.MouseButton1Click:Connect(function()
             if not active then return end
             if input.Text == "" then
-                statusLbl.Text = "キーを入力してください"
-                statusLbl.TextColor3 = T.STATUS_RED
+                statusLbl.Text = "キーを入力してください"; statusLbl.TextColor3 = T.STATUS_RED
                 return
             end
-            active = false
-            statusLbl.Text = "Verifying..."
-            statusLbl.TextColor3 = T.TEXT_M
+            active = false; statusLbl.Text = "Verifying..."; statusLbl.TextColor3 = T.TEXT_M
             wait(0.4)
             if validateKey(input.Text) then
-                statusLbl.Text = "✓ 認証成功"
-                statusLbl.TextColor3 = T.STATUS_GREEN
+                statusLbl.Text = "✓ 認証成功"; statusLbl.TextColor3 = T.STATUS_GREEN
                 tw(topLine, { BackgroundColor3=T.STATUS_GREEN })
                 wait(0.7)
-                twWait(overlay, { BackgroundTransparency=1 },
-                    TweenInfo.new(0.3,Enum.EasingStyle.Quad,Enum.EasingDirection.Out))
+                twWait(overlay, { BackgroundTransparency=1 }, TweenInfo.new(0.3,Enum.EasingStyle.Quad,Enum.EasingDirection.Out))
                 overlay:Destroy()
                 successSignal:Fire()
             else
-                statusLbl.Text = "✕ 無効なキーです"
-                statusLbl.TextColor3 = T.STATUS_RED
+                statusLbl.Text = "✕ 無効なキーです"; statusLbl.TextColor3 = T.STATUS_RED
                 local origPos = inputBg.Position
                 for i = 1, 4 do
-                    twWait(inputBg, {
-                        Position=UDim2.new(0, i%2==0 and 6 or -6, 0, 70)
-                    }, TweenInfo.new(0.05,Enum.EasingStyle.Quad))
+                    twWait(inputBg, { Position=UDim2.new(0, i%2==0 and 6 or -6, 0, 70) }, TweenInfo.new(0.05,Enum.EasingStyle.Quad))
                 end
-                inputBg.Position = origPos
-                active = true
+                inputBg.Position = origPos; active = true
             end
         end)
+
         input.FocusLost:Connect(function(enter)
             if enter then submitBtn.MouseButton1Click:Fire() end
         end)
