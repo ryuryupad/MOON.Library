@@ -711,85 +711,99 @@ function Library:CreateWindow(config)
 -- [[ 3. メイン GUI セクションの一部：右側ボタンと最小化ロジック ]]
 
 -- ─── 右側ボタン (最小化・閉じる) ─────────
-local btnArea = make("Frame", {
-    Size = UDim2.new(0, 64, 1, 0), 
-    Position = UDim2.new(1, -68, 0, 0),
-    BackgroundTransparency = 1, 
-    ZIndex = 5,
-}, topBar)
+        local btnArea = make("Frame", {
+            Size = UDim2.new(0, 64, 1, 0), 
+            Position = UDim2.new(1, -68, 0, 0),
+            BackgroundTransparency = 1, 
+            ZIndex = 5,
+        }, topBar)
 
-local minimized = false
-local originalSize = UDim2.new(0.65, 0, 0.65, 0) -- レスポンシブな標準サイズ
-local minSize = UDim2.new(0, 150, 0, TOPBAR_H)   -- 最小化時の凝縮サイズ
+        local minimized = false
+        -- originalSize は CreateWindow 冒頭で定義した Scale (0.65, 0, 0.65, 0) を参照
+        local minSize = UDim2.new(0, 150, 0, TOPBAR_H) -- 横幅 150px まで凝縮
 
--- 最小化ボタン
-local minimizeBtn = make("TextButton", {
-    Text = "─", TextSize = 14, Font = Enum.Font.GothamBold,
-    TextColor3 = T.TEXT_M, BackgroundTransparency = 1,
-    Size = UDim2.new(0, 28, 1, 0), Position = UDim2.new(0, 0, 0, 0),
-    AutoButtonColor = false, ZIndex = 5,
-}, btnArea)
+        -- 最小化ボタン
+        local minimizeBtn = make("TextButton", {
+            Text = "─", TextSize = 14, Font = Enum.Font.GothamBold,
+            TextColor3 = T.TEXT_M, BackgroundTransparency = 1,
+            Size = UDim2.new(0, 28, 1, 0), Position = UDim2.new(0, 0, 0, 0),
+            AutoButtonColor = false, ZIndex = 5,
+        }, btnArea)
 
-minimizeBtn.MouseEnter:Connect(function() tw(minimizeBtn, {TextColor3 = Color3.fromRGB(254, 188, 46)}) end)
-minimizeBtn.MouseLeave:Connect(function() tw(minimizeBtn, {TextColor3 = T.TEXT_M}) end)
+        minimizeBtn.MouseEnter:Connect(function() tw(minimizeBtn, {TextColor3 = Color3.fromRGB(254, 188, 46)}) end)
+        minimizeBtn.MouseLeave:Connect(function() tw(minimizeBtn, {TextColor3 = T.TEXT_M}) end)
 
-minimizeBtn.MouseButton1Click:Connect(function()
-    minimized = not minimized
+        minimizeBtn.MouseButton1Click:Connect(function()
+            minimized = not minimized
+            
+            -- はみ出し防止を強制
+            main.ClipsDescendants = true
+            
+            if minimized then
+                -- 【凝縮】中身を消して、枠をトップバーサイズまで絞る
+                contentWrapper.Visible = false
+                if sideBar then sideBar.Visible = false end
+                title.Visible = false -- タイトルも消すとスッキリする
+                
+                twWait(main, { 
+                    Size = minSize,
+                    BackgroundColor3 = T.BG_TOPBAR 
+                }, TW_MED)
+                
+                -- ボタン位置を微調整
+                btnArea.Position = UDim2.new(1, -64, 0, 0)
+            else
+                -- 【復元】
+                twWait(main, { 
+                    Size = originalSize, -- CreateWindowで決めた元のScaleサイズ
+                    BackgroundColor3 = T.BG_MAIN 
+                }, TW_MED)
+                
+                contentWrapper.Visible = true
+                if sideBar then sideBar.Visible = true end
+                title.Visible = true
+                
+                btnArea.Position = UDim2.new(1, -68, 0, 0)
+                main.ClipsDescendants = false
+            end
+        end)
+
+        -- 閉じるボタン
+        local closeBtn = make("TextButton", {
+            Text = "✕", TextSize = 13, Font = Enum.Font.GothamBold,
+            TextColor3 = T.TEXT_M, BackgroundTransparency = 1,
+            Size = UDim2.new(0, 28, 1, 0), Position = UDim2.new(0, 30, 0, 0),
+            AutoButtonColor = false, ZIndex = 5,
+        }, btnArea)
+
+        closeBtn.MouseEnter:Connect(function() tw(closeBtn, {TextColor3 = Color3.fromRGB(255, 95, 87)}) end)
+        closeBtn.MouseLeave:Connect(function() tw(closeBtn, {TextColor3 = T.TEXT_M}) end)
+
+        closeBtn.MouseButton1Click:Connect(function()
+            -- 閉じる時は中央に消滅
+            twWait(main, { 
+                Size = UDim2.new(0, 0, 0, 0), 
+                BackgroundTransparency = 1 
+            }, TW_MED)
+            gui:Destroy()
+        end)
     
-    -- ClipsDescendantsを一時的にONにして中身のはみ出しを防ぐ
-    main.ClipsDescendants = true
-    
-    if minimized then
-        -- 【凝縮モード】縦も横もバッサリ削る
-        contentWrapper.Visible = false
-        if sideBar then sideBar.Visible = false end -- サイドバーも道連れだ
-        
-        twWait(main, { 
-            Size = minSize,
-            BackgroundColor3 = T.BG_TOPBAR -- トップバーの色に同化させて塊感を出す
-        }, TW_MED)
-    else
-        -- 【復元モード】
-        twWait(main, { 
-            Size = originalSize,
-            BackgroundColor3 = T.BG_MAIN 
-        }, TW_MED)
-        
-        contentWrapper.Visible = true
-        if sideBar then sideBar.Visible = true end
-        
-        -- アニメ終了後にClipsDescendantsを戻す（ドロップダウン等の表示のため）
-        main.ClipsDescendants = false
-    end
-end)
-
--- 閉じるボタン
-local closeBtn = make("TextButton", {
-    Text = "✕", TextSize = 13, Font = Enum.Font.GothamBold,
-    TextColor3 = T.TEXT_M, BackgroundTransparency = 1,
-    Size = UDim2.new(0, 28, 1, 0), Position = UDim2.new(0, 30, 0, 0),
-    AutoButtonColor = false, ZIndex = 5,
-}, btnArea)
-
-closeBtn.MouseEnter:Connect(function() tw(closeBtn, {TextColor3 = Color3.fromRGB(255, 95, 87)}) end)
-closeBtn.MouseLeave:Connect(function() tw(closeBtn, {TextColor3 = T.TEXT_M}) end)
-
-closeBtn.MouseButton1Click:Connect(function()
-    -- ただ消えるんじゃなく、中心に吸い込まれるように消す
-    twWait(main, { 
-        Size = UDim2.new(0, 0, 0, 0), 
-        BackgroundTransparency = 1 
-    }, TW_MED)
-    gui:Destroy()
-end)
-
--- ─── ドラッグ (topBar 限定、モバイル対応版) ────
+-- ─── ドラッグ (topBar 限定、モバイル視点固定版) ────
         do
             local dragging, dragInput, dragStart, startPos
+            
+            -- モバイルで視点移動を強制停止させるためのダミーボタン
+            local modalLock = make("TextButton", {
+                Name = "ModalLock",
+                Size = UDim2.new(1, 0, 1, 0),
+                BackgroundTransparency = 1,
+                Text = "",
+                Modal = true, -- これが視点固定のキモ
+                Visible = false,
+            }, topBar)
 
             local function update(input)
                 local delta = input.Position - dragStart
-                -- Tweenを使ってモバイルでも指に吸い付くように動かす
                 TweenService:Create(main, TweenInfo.new(0.08, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
                     Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
                 }):Play()
@@ -800,10 +814,15 @@ end)
                     dragging = true
                     dragStart = input.Position
                     startPos = main.Position
+                    
+                    -- ドラッグ開始時に視点をロック
+                    modalLock.Visible = true
 
                     input.Changed:Connect(function()
                         if input.UserInputState == Enum.UserInputState.End then
                             dragging = false
+                            -- 指を離したら視点ロック解除
+                            modalLock.Visible = false
                         end
                     end)
                 end
@@ -821,6 +840,7 @@ end)
                 end
             end)
         end
+    
         -- ─── サイドバー ───────────────────────────
         local sidebar = make("Frame", {
             Size = UDim2.new(0,SIDEBAR_W, 1, -USERPANEL_H),
