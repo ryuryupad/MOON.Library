@@ -287,120 +287,91 @@ function Library:CreateWindow(config)
 -- ══════════════════════════════
     --  1. 起動アニメーション (連動版)
     -- ══════════════════════════════
-    local function playIntro()
-        local overlay = make("Frame", {
-            Size = UDim2.new(1,0,1,0),
-            -- 【修正】背景を T.BG_MAIN (漆黒) に変更
-            BackgroundColor3 = T.BG_MAIN,
-            BorderSizePixel = 0, ZIndex = 300,
-        }, gui)
+-- [[ 1. 起動アニメーション (カスタムライブラリ版) ]]
+-- 呼び出し例: Library:PlayIntro({Title = "MOON", Subtitle = "v3.0", Color = Color3.fromRGB(255, 200, 0)})
 
-        local particles = {}
-        for _ = 1, 24 do
-            local sz = math.random(2,5)
-            local p = make("Frame", {
-                Size = UDim2.new(0,sz,0,sz),
-                Position = UDim2.new(math.random(0,100)/100, 0, math.random(0,100)/100, 0),
-                -- 【修正】パーティクルは Accent (琥珀)
-                BackgroundColor3 = Accent,
-                BorderSizePixel = 0,
-                BackgroundTransparency = math.random(40,85)/100,
-                ZIndex = 301,
-            }, overlay)
-            corner(sz, p)
-            table.insert(particles, p)
-        end
+function Library:PlayIntro(config)
+    local Title = config.Title or "MOON UI"
+    local Subtitle = config.Subtitle or "Standard Edition"
+    local AccentColor = config.Color or T.ACCENT
+    
+    local overlay = make("Frame", {
+        Size = UDim2.new(1,0,1,0),
+        BackgroundColor3 = T.BG_MAIN,
+        BorderSizePixel = 0, ZIndex = 500,
+    }, gui) -- guiはScreenGui
 
-        -- パーティクル移動ロジック
-        task.spawn(function()
-            for _, p in pairs(particles) do
-                local sp = p.Position
-                task.spawn(function()
-                    while p and p.Parent do
-                        local tx = math.clamp(sp.X.Scale+(math.random(-8,8)/100),0,0.98)
-                        local ty = math.clamp(sp.Y.Scale+(math.random(-8,8)/100),0,0.98)
-                        tw(p, { Position=UDim2.new(tx,0,ty,0),
-                            BackgroundTransparency=math.random(30,80)/100 },
-                            TweenInfo.new(math.random(15,30)/10,
-                                Enum.EasingStyle.Sine, Enum.EasingDirection.InOut))
-                        task.wait(math.random(15,30)/10)
-                    end
-                end)
-            end
-        end)
+    -- Orionコンテナ (ロゴとタイトルのセット)
+    local orionContainer = make("Frame", {
+        Size = UDim2.new(0, 0, 0, 40),
+        Position = UDim2.new(0.5, 0, 0.48, 0),
+        AnchorPoint = Vector2.new(0.5, 0.5),
+        BackgroundTransparency = 1, ZIndex = 501,
+    }, overlay)
 
-        local center = make("Frame", {
-            Size=UDim2.new(0,320,0,140), Position=UDim2.new(0.5,-160,0.5,-70),
-            BackgroundTransparency=1, ZIndex=302,
+    local logo = make("ImageLabel", {
+        Size = UDim2.new(0, 32, 0, 32),
+        Position = UDim2.new(0.5, 0, 0.5, 0),
+        AnchorPoint = Vector2.new(0.5, 0.5),
+        Image = "rbxassetid://8834748103", -- Orion Logo
+        ImageColor3 = AccentColor,
+        BackgroundTransparency = 1, ImageTransparency = 1,
+        ZIndex = 502,
+    }, orionContainer)
+
+    local titleLbl = make("TextLabel", {
+        Text = Title, TextSize = 32, Font = Enum.Font.GothamBold,
+        TextColor3 = T.TEXT_P, BackgroundTransparency = 1,
+        TextTransparency = 1, TextXAlignment = Enum.TextXAlignment.Left,
+        AutomaticSize = Enum.AutomaticSize.X,
+        Position = UDim2.new(0, 42, 0.5, 0), AnchorPoint = Vector2.new(0, 0.5),
+        ZIndex = 502,
+    }, orionContainer)
+
+    -- パーティクル生成 (背景の賑やかし)
+    local particles = {}
+    for _ = 1, 15 do
+        local sz = math.random(2,4)
+        local p = make("Frame", {
+            Size = UDim2.new(0,sz,0,sz),
+            Position = UDim2.new(math.random(0,100)/100, 0, math.random(0,100)/100, 0),
+            BackgroundColor3 = AccentColor, BackgroundTransparency = 1,
+            BorderSizePixel = 0, ZIndex = 501,
         }, overlay)
-
-        local logoLine = make("Frame", {
-            Size=UDim2.new(0,0,0,2), Position=UDim2.new(0.5,0,0,0),
-            BackgroundColor3=Accent, BorderSizePixel=0, ZIndex=303,
-        }, center)
-        corner(1, logoLine)
-
-        local titleLbl = make("TextLabel", {
-            Text=Title, TextSize=38, Font=Enum.Font.GothamBold,
-            TextColor3=T.TEXT_P, BackgroundTransparency=1,
-            Size=UDim2.new(1,0,0,56), Position=UDim2.new(0,0,0,20),
-            TextXAlignment=Enum.TextXAlignment.Center,
-            TextTransparency=1, ZIndex=303,
-        }, center)
-
-        local subLbl = make("TextLabel", {
-            Text=Subtitle, TextSize=13, Font=Enum.Font.Gotham,
-            TextColor3=T.ACCENT_TEXT, BackgroundTransparency=1,
-            Size=UDim2.new(1,0,0,20), Position=UDim2.new(0,0,0,78),
-            TextXAlignment=Enum.TextXAlignment.Center,
-            TextTransparency=1, ZIndex=303,
-        }, center)
-
-        local barTrack = make("Frame", {
-            Size=UDim2.new(0,200,0,3), Position=UDim2.new(0.5,-100,0,112),
-            -- 【修正】バーの土台を T.BG_ELEMENT (深めの黒) に変更
-            BackgroundColor3 = T.BG_ELEMENT,
-            BorderSizePixel=0, ZIndex=303,
-        }, center)
-        corner(2, barTrack)
-        
-        local barFill = make("Frame", {
-            Size=UDim2.new(0,0,1,0), BackgroundColor3=Accent, -- 琥珀
-            BorderSizePixel=0, ZIndex=304,
-        }, barTrack)
-        corner(2, barFill)
-
-        local statusLbl = make("TextLabel", {
-            Text="Initializing...", TextSize=11, Font=Enum.Font.Gotham,
-            TextColor3=T.TEXT_M, BackgroundTransparency=1,
-            Size=UDim2.new(1,0,0,16), Position=UDim2.new(0,0,0,122),
-            TextXAlignment=Enum.TextXAlignment.Center, ZIndex=303,
-        }, center)
-
-        -- アニメーション開始
-        task.wait(0.1)
-        twWait(logoLine, { Size=UDim2.new(1,0,0,2), Position=UDim2.new(0,0,0,0) }, TW_SLOW)
-        tw(titleLbl, { TextTransparency=0 }, TweenInfo.new(0.4,Enum.EasingStyle.Quad,Enum.EasingDirection.Out))
-        glitchText(titleLbl, Title, 0.7)
-        task.wait(0.5)
-        twWait(subLbl, { TextTransparency=0 }, TweenInfo.new(0.35,Enum.EasingStyle.Quad,Enum.EasingDirection.Out))
-
-        for _, step in ipairs({
-            { text="Loading modules...",  pct=0.30 },
-            { text="Connecting...",        pct=0.55 },
-            { text="Verifying assets...", pct=0.80 },
-            { text="Ready.",              pct=1.00 },
-        }) do
-            statusLbl.Text = step.text
-            twWait(barFill, { Size=UDim2.new(step.pct,0,1,0) }, TweenInfo.new(0.3,Enum.EasingStyle.Quad,Enum.EasingDirection.Out))
-            task.wait(0.18)
-        end
-        task.wait(0.3)
-        twWait(overlay, { BackgroundTransparency=1 }, TweenInfo.new(0.45,Enum.EasingStyle.Quad,Enum.EasingDirection.Out))
-        overlay:Destroy()
-        task.wait(0.05)
+        corner(sz, p)
+        table.insert(particles, p)
     end
-  
+
+    -- ── シーケンス開始 ──
+    task.spawn(function()
+        -- 1. ロゴ出現
+        twWait(logo, { ImageTransparency = 0 }, TW_MED)
+        task.wait(0.5)
+
+        -- 2. Orionムーブ (スライド展開)
+        local totalWidth = 32 + 12 + titleLbl.TextBounds.X
+        tw(orionContainer, { Size = UDim2.new(0, totalWidth, 0, 40) }, TW_MED)
+        tw(logo, { Position = UDim2.new(0, 0, 0.5, 0), AnchorPoint = Vector2.new(0, 0.5) }, TW_MED)
+        task.wait(0.1)
+        tw(titleLbl, { TextTransparency = 0 }, TW_MED)
+        
+        -- パーティクルをフワッと出す
+        for _, p in pairs(particles) do
+            tw(p, { BackgroundTransparency = 0.6 }, TW_SLOW)
+        end
+        
+        task.wait(1.5)
+
+        -- 3. 撤収
+        tw(overlay, { BackgroundTransparency = 1 }, TW_MED)
+        tw(logo, { ImageTransparency = 1 }, TW_FAST)
+        tw(titleLbl, { TextTransparency = 1 }, TW_FAST)
+        for _, p in pairs(particles) do tw(p, { BackgroundTransparency = 1 }, TW_FAST) end
+        
+        task.wait(0.6)
+        overlay:Destroy()
+    end)
+end
  -- ══════════════════════════════
     --  2. キー認証システム (完全版)
     -- ══════════════════════════════
