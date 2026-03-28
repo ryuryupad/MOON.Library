@@ -708,99 +708,59 @@ function Library:CreateWindow(config)
             TextXAlignment = Enum.TextXAlignment.Left, ZIndex = 5,
         }, topBar)
 
--- ─── 右側ボタン (Orion完全パクリ・凝縮最小化版) ─────────
-local btnArea = make("Frame", {
-    Size = UDim2.new(0, 64, 1, 0), 
-    Position = UDim2.new(1, -68, 0, 0),
-    BackgroundTransparency = 1, 
-    ZIndex = 5,
-}, topBar)
-
+-- ─── Orion風 最小化ロジック (トグル化) ───
 local minimized = false
 local originalSize = UDim2.new(0.65, 0, 0.65, 0)
--- Orionスタイル：150x50の棒じゃなく、45x45の「円形アイコン」に凝縮する
-local iconSize = UDim2.new(0, 45, 0, 45) 
 
-local minimizeBtn = make("TextButton", {
-    Text = "─", TextSize = 14, Font = Enum.Font.GothamBold,
-    TextColor3 = T.TEXT_M, BackgroundTransparency = 1,
-    Size = UDim2.new(0, 28, 1, 0), Position = UDim2.new(0, 0, 0, 0),
-    AutoButtonColor = false, ZIndex = 5,
-}, btnArea)
+-- Orion風の「小さな丸いボタン」を生成 (最初は隠しておく)
+local orionToggle = make("TextButton", {
+    Name = "OrionToggle",
+    Size = UDim2.new(0, 45, 0, 45),
+    Position = UDim2.new(0, 20, 0, 20), -- 左上に配置
+    BackgroundColor3 = T.ACCENT,
+    Text = "🌙", -- アイコン
+    TextColor3 = Color3.new(0,0,0),
+    TextSize = 20,
+    Font = Enum.Font.GothamBold,
+    Visible = false,
+    ZIndex = 10,
+}, gui) -- ScreenGuiに直接入れる
+corner(22, orionToggle) -- 完全に丸くする
 
+-- 最小化ボタンのロジック
 minimizeBtn.MouseButton1Click:Connect(function()
-    minimized = not minimized
+    minimized = true
     
-    -- Orionの「弾む」動きを再現するために EasingStyle.Back を使う
-    local style = minimized and Enum.EasingStyle.Back or Enum.EasingStyle.Quart
-    main.ClipsDescendants = true
+    -- 1. メインウィンドウをOrion風に「弾んで消す」
+    tw(main, { Size = UDim2.new(0,0,0,0), BackgroundTransparency = 1 }, 0.4, Enum.EasingStyle.Back)
     
-    if minimized then
-        -- 1. 【Orionシーケンス】中身とトップバーを即座に殺す
-        contentWrapper.Visible = false
-        if sideBar then sideBar.Visible = false end
-        title.Visible = false
-        topBar.BackgroundTransparency = 1 -- バーの背景も消してアイコンだけにする
-        
-        -- 2. 枠を「円形アイコン」まで一気に凝縮
-        tw(main, { 
-            Size = iconSize,
-            BackgroundColor3 = T.ACCENT -- 最小化時は琥珀色に発光
-        }, 0.5, style)
-        
-        -- 3. 角を丸めて完全に「円」にする
-        tw(main:FindFirstChildOfClass("UICorner"), { CornerRadius = UDim.new(0, 22) })
-        
-        -- 4. ボタンをアイコンの中央に配置
-        btnArea.Position = UDim2.new(0, 0, 0, 0)
-        btnArea.Size = UDim2.new(1, 0, 1, 0)
-        closeBtn.Visible = false
-        minimizeBtn.Size = UDim2.new(1, 0, 1, 0)
-        minimizeBtn.Text = "🌙" -- Orionっぽくロゴ化
-    else
-        -- 復元
-        tw(main, { 
-            Size = originalSize,
-            BackgroundColor3 = T.BG_MAIN 
-        }, 0.5, style)
-        
-        tw(main:FindFirstChildOfClass("UICorner"), { CornerRadius = UDim.new(0, 12) })
-        
-        topBar.BackgroundTransparency = 0
-        title.Visible = true
-        contentWrapper.Visible = true
-        if sideBar then sideBar.Visible = true end
-        
-        -- ボタン配置を戻す
-        btnArea.Position = UDim2.new(1, -68, 0, 0)
-        btnArea.Size = UDim2.new(0, 64, 1, 0)
-        closeBtn.Visible = true
-        minimizeBtn.Size = UDim2.new(0, 28, 1, 0)
-        minimizeBtn.Text = "─"
-        
-        task.delay(0.5, function() main.ClipsDescendants = false end)
-    end
+    task.delay(0.2, function()
+        main.Visible = false
+        -- 2. トグルボタンを「フワッ」と出現させる
+        orionToggle.Visible = true
+        orionToggle.Size = UDim2.new(0, 0, 0, 0)
+        tw(orionToggle, { Size = UDim2.new(0, 45, 0, 45) }, 0.4, Enum.EasingStyle.Elastic)
+    end)
 end)
 
--- 閉じるボタン（ここはそのまま）
-local closeBtn = make("TextButton", {
-    Text = "✕", TextSize = 13, Font = Enum.Font.GothamBold,
-    TextColor3 = T.TEXT_M, BackgroundTransparency = 1,
-    Size = UDim2.new(0, 28, 1, 0), Position = UDim2.new(0, 30, 0, 0),
-    AutoButtonColor = false, ZIndex = 5,
-}, btnArea)
+-- トグルボタン（Orionアイコン）をクリックして戻す
+orionToggle.MouseButton1Click:Connect(function()
+    minimized = false
+    
+    -- 1. トグルボタンを消す
+    tw(orionToggle, { Size = UDim2.new(0, 0, 0, 0) }, 0.3, Enum.EasingStyle.Back)
+    
+    task.delay(0.2, function()
+        orionToggle.Visible = false
+        -- 2. メインウィンドウを復活
+        main.Visible = true
+        main.BackgroundTransparency = 0
+        tw(main, { Size = originalSize }, 0.5, Enum.EasingStyle.Quart)
+    end)
+end)
 
-        closeBtn.MouseEnter:Connect(function() tw(closeBtn, {TextColor3 = Color3.fromRGB(255, 95, 87)}) end)
-        closeBtn.MouseLeave:Connect(function() tw(closeBtn, {TextColor3 = T.TEXT_M}) end)
-
-        closeBtn.MouseButton1Click:Connect(function()
-            -- 閉じる時は中央に消滅
-            twWait(main, { 
-                Size = UDim2.new(0, 0, 0, 0), 
-                BackgroundTransparency = 1 
-            }, TW_MED)
-            gui:Destroy()
-        end)
+-- ついでにトグルボタンもドラッグ可能にする
+dragLogic(orionToggle)
     
 -- ─── ドラッグ (topBar 限定、モバイル視点固定版) ────
         do
