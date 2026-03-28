@@ -602,25 +602,36 @@ function Library:CreateWindow(config)
     -- ══════════════════════════════
     --  3. メイン GUI
     -- ══════════════════════════════
-    local function buildMainGUI()
+  local function buildMainGUI()
         local WIN_W, WIN_H = 680, 480
         local SIDEBAR_W    = 148
         local TOPBAR_H     = 50
-        -- ユーザーパネルが有効なら下部に高さを追加
         local USERPANEL_H  = (UserPanel.Enabled) and 52 or 0
 
-        -- ─── メインフレーム ───────────────────────
+        -- ─── メインフレーム (レスポンシブ化) ───────────────────────
         local main = make("Frame", {
             Name = "MainFrame",
-            Size = UDim2.new(0, WIN_W, 0, 0),
-            Position = UDim2.new(0.5, -WIN_W/2, 0.5, -WIN_H/2),
+            -- [[ 🚀 FIX: ピクセル固定(0, 680)を捨てて、画面比率(0.6, 0)にする ]]
+            Size = UDim2.new(0.6, 0, 0.6, 0), 
+            Position = UDim2.new(0.5, 0, 0.5, 0),
+            AnchorPoint = Vector2.new(0.5, 0.5), -- 中心を基準
             BackgroundColor3 = T.BG_MAIN,
             BorderSizePixel = 0,
-            ClipsDescendants = false,  -- FIX[2]: ClipsDescendants は使わない
+            ClipsDescendants = false,
         }, gui)
         corner(12, main)
 
-        -- 枠線 (グラデーション対応)
+        -- [[ 🚀 重要: どのデバイスでも 680:480 の形を崩さない設定 ]]
+        local Aspect = Instance.new("UIAspectRatioConstraint", main)
+        Aspect.AspectRatio = 1.416 -- (680 / 480)
+        Aspect.AspectType = Enum.AspectType.FitWithinMaxSize
+
+        -- PCでデカすぎ、スマホで小さすぎを防止
+        local SizeConstraint = Instance.new("UISizeConstraint", main)
+        SizeConstraint.MaxSize = Vector2.new(800, 565)
+        SizeConstraint.MinSize = Vector2.new(450, 318)
+
+        -- 枠線 (グラデーション対応) -- ここから下はお前のコードをそのまま維持
         if BorderCfg.Type == "rainbow" then
             -- 虹色グラデーション枠
             local stroke = uiStroke(rgb(255,255,255), 1.5, main)
@@ -697,73 +708,119 @@ function Library:CreateWindow(config)
             TextXAlignment = Enum.TextXAlignment.Left, ZIndex = 5,
         }, topBar)
 
-        -- ─── 右側ボタン (最小化・閉じる) ─────────
-        local btnArea = make("Frame", {
-            Size = UDim2.new(0,64,1,0), Position = UDim2.new(1,-68,0,0),
-            BackgroundTransparency = 1, ZIndex = 5,
-        }, topBar)
+-- [[ 3. メイン GUI セクションの一部：右側ボタンと最小化ロジック ]]
 
-        -- FIX[2][3]: 最小化 - ClipsDescendants を使わず contentWrapper を隠す
-        local minimized = false
-        local minimizeBtn = make("TextButton", {
-            Text="─", TextSize=14, Font=Enum.Font.GothamBold,
-            TextColor3=T.TEXT_M, BackgroundTransparency=1,
-            Size=UDim2.new(0,28,1,0), Position=UDim2.new(0,0,0,0),
-            AutoButtonColor=false, ZIndex=5,
-        }, btnArea)
-        minimizeBtn.MouseEnter:Connect(function()
-            tw(minimizeBtn,{TextColor3=rgb(254,188,46)})
-        end)
-        minimizeBtn.MouseLeave:Connect(function()
-            tw(minimizeBtn,{TextColor3=T.TEXT_M})
-        end)
-        minimizeBtn.MouseButton1Click:Connect(function()
-            minimized = not minimized
-            if minimized then
-                -- main は TOPBAR_H だけ残してサイズ変更 → 角は常に維持
-                twWait(main, { Size=UDim2.new(0,WIN_W,0,TOPBAR_H) }, TW_MED)
-                contentWrapper.Visible = false
-            else
-                contentWrapper.Visible = true
-                twWait(main, { Size=UDim2.new(0,WIN_W,0,WIN_H) }, TW_MED)
-            end
-        end)
+-- ─── 右側ボタン (最小化・閉じる) ─────────
+local btnArea = make("Frame", {
+    Size = UDim2.new(0, 64, 1, 0), 
+    Position = UDim2.new(1, -68, 0, 0),
+    BackgroundTransparency = 1, 
+    ZIndex = 5,
+}, topBar)
 
-        -- 閉じるボタン
-        local closeBtn = make("TextButton", {
-            Text="✕", TextSize=13, Font=Enum.Font.GothamBold,
-            TextColor3=T.TEXT_M, BackgroundTransparency=1,
-            Size=UDim2.new(0,28,1,0), Position=UDim2.new(0,30,0,0),
-            AutoButtonColor=false, ZIndex=5,
-        }, btnArea)
-        closeBtn.MouseEnter:Connect(function() tw(closeBtn,{TextColor3=rgb(255,95,87)}) end)
-        closeBtn.MouseLeave:Connect(function() tw(closeBtn,{TextColor3=T.TEXT_M}) end)
-        closeBtn.MouseButton1Click:Connect(function()
-            twWait(main, { Size=UDim2.new(0,WIN_W,0,0), BackgroundTransparency=1 }, TW_MED)
-            gui:Destroy()
-        end)
+local minimized = false
+local originalSize = UDim2.new(0.65, 0, 0.65, 0) -- レスポンシブな標準サイズ
+local minSize = UDim2.new(0, 150, 0, TOPBAR_H)   -- 最小化時の凝縮サイズ
 
-        -- ─── ドラッグ (topBar 限定、重複なし) ────
+-- 最小化ボタン
+local minimizeBtn = make("TextButton", {
+    Text = "─", TextSize = 14, Font = Enum.Font.GothamBold,
+    TextColor3 = T.TEXT_M, BackgroundTransparency = 1,
+    Size = UDim2.new(0, 28, 1, 0), Position = UDim2.new(0, 0, 0, 0),
+    AutoButtonColor = false, ZIndex = 5,
+}, btnArea)
+
+minimizeBtn.MouseEnter:Connect(function() tw(minimizeBtn, {TextColor3 = Color3.fromRGB(254, 188, 46)}) end)
+minimizeBtn.MouseLeave:Connect(function() tw(minimizeBtn, {TextColor3 = T.TEXT_M}) end)
+
+minimizeBtn.MouseButton1Click:Connect(function()
+    minimized = not minimized
+    
+    -- ClipsDescendantsを一時的にONにして中身のはみ出しを防ぐ
+    main.ClipsDescendants = true
+    
+    if minimized then
+        -- 【凝縮モード】縦も横もバッサリ削る
+        contentWrapper.Visible = false
+        if sideBar then sideBar.Visible = false end -- サイドバーも道連れだ
+        
+        twWait(main, { 
+            Size = minSize,
+            BackgroundColor3 = T.BG_TOPBAR -- トップバーの色に同化させて塊感を出す
+        }, TW_MED)
+    else
+        -- 【復元モード】
+        twWait(main, { 
+            Size = originalSize,
+            BackgroundColor3 = T.BG_MAIN 
+        }, TW_MED)
+        
+        contentWrapper.Visible = true
+        if sideBar then sideBar.Visible = true end
+        
+        -- アニメ終了後にClipsDescendantsを戻す（ドロップダウン等の表示のため）
+        main.ClipsDescendants = false
+    end
+end)
+
+-- 閉じるボタン
+local closeBtn = make("TextButton", {
+    Text = "✕", TextSize = 13, Font = Enum.Font.GothamBold,
+    TextColor3 = T.TEXT_M, BackgroundTransparency = 1,
+    Size = UDim2.new(0, 28, 1, 0), Position = UDim2.new(0, 30, 0, 0),
+    AutoButtonColor = false, ZIndex = 5,
+}, btnArea)
+
+closeBtn.MouseEnter:Connect(function() tw(closeBtn, {TextColor3 = Color3.fromRGB(255, 95, 87)}) end)
+closeBtn.MouseLeave:Connect(function() tw(closeBtn, {TextColor3 = T.TEXT_M}) end)
+
+closeBtn.MouseButton1Click:Connect(function()
+    -- ただ消えるんじゃなく、中心に吸い込まれるように消す
+    twWait(main, { 
+        Size = UDim2.new(0, 0, 0, 0), 
+        BackgroundTransparency = 1 
+    }, TW_MED)
+    gui:Destroy()
+end)
+
+-- ─── ドラッグ (topBar 限定、モバイル対応版) ────
         do
-            local drag, ds, sp
-            topBar.InputBegan:Connect(function(i)
-                if i.UserInputType == Enum.UserInputType.MouseButton1 then
-                    drag = true; ds = i.Position; sp = main.Position
+            local dragging, dragInput, dragStart, startPos
+
+            local function update(input)
+                local delta = input.Position - dragStart
+                -- Tweenを使ってモバイルでも指に吸い付くように動かす
+                TweenService:Create(main, TweenInfo.new(0.08, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+                    Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
+                }):Play()
+            end
+
+            topBar.InputBegan:Connect(function(input)
+                if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+                    dragging = true
+                    dragStart = input.Position
+                    startPos = main.Position
+
+                    input.Changed:Connect(function()
+                        if input.UserInputState == Enum.UserInputState.End then
+                            dragging = false
+                        end
+                    end)
                 end
             end)
-            UserInputService.InputChanged:Connect(function(i)
-                if drag and i.UserInputType == Enum.UserInputType.MouseMovement then
-                    local d = i.Position - ds
-                    main.Position = UDim2.new(
-                        sp.X.Scale, sp.X.Offset + d.X,
-                        sp.Y.Scale, sp.Y.Offset + d.Y)
+
+            topBar.InputChanged:Connect(function(input)
+                if input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch then
+                    dragInput = input
                 end
             end)
-            UserInputService.InputEnded:Connect(function(i)
-                if i.UserInputType == Enum.UserInputType.MouseButton1 then drag = false end
+
+            UserInputService.InputChanged:Connect(function(input)
+                if input == dragInput and dragging then
+                    update(input)
+                end
             end)
         end
-
         -- ─── サイドバー ───────────────────────────
         local sidebar = make("Frame", {
             Size = UDim2.new(0,SIDEBAR_W, 1, -USERPANEL_H),
