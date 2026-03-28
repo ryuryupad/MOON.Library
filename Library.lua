@@ -708,87 +708,73 @@ function Library:CreateWindow(config)
             TextXAlignment = Enum.TextXAlignment.Left, ZIndex = 5,
         }, topBar)
 
--- ─── 右側ボタン (Orion完全パクリ・凝縮最小化版) ─────────
-local btnArea = make("Frame", {
-    Size = UDim2.new(0, 64, 1, 0), 
-    Position = UDim2.new(1, -68, 0, 0),
-    BackgroundTransparency = 1, 
-    ZIndex = 5,
-}, topBar)
+-- [[ 3. メイン GUI セクションの一部：右側ボタンと最小化ロジック ]]
 
-local minimized = false
-local originalSize = UDim2.new(0.65, 0, 0.65, 0)
--- Orionスタイル：150x50の棒じゃなく、45x45の「円形アイコン」に凝縮する
-local iconSize = UDim2.new(0, 45, 0, 45) 
+-- ─── 右側ボタン (最小化・閉じる) ─────────
+        local btnArea = make("Frame", {
+            Size = UDim2.new(0, 64, 1, 0), 
+            Position = UDim2.new(1, -68, 0, 0),
+            BackgroundTransparency = 1, 
+            ZIndex = 5,
+        }, topBar)
 
-local minimizeBtn = make("TextButton", {
-    Text = "─", TextSize = 14, Font = Enum.Font.GothamBold,
-    TextColor3 = T.TEXT_M, BackgroundTransparency = 1,
-    Size = UDim2.new(0, 28, 1, 0), Position = UDim2.new(0, 0, 0, 0),
-    AutoButtonColor = false, ZIndex = 5,
-}, btnArea)
+        local minimized = false
+        -- originalSize は CreateWindow 冒頭で定義した Scale (0.65, 0, 0.65, 0) を参照
+        local minSize = UDim2.new(0, 150, 0, TOPBAR_H) -- 横幅 150px まで凝縮
 
-minimizeBtn.MouseButton1Click:Connect(function()
-    minimized = not minimized
-    
-    -- Orionの「弾む」動きを再現するために EasingStyle.Back を使う
-    local style = minimized and Enum.EasingStyle.Back or Enum.EasingStyle.Quart
-    main.ClipsDescendants = true
-    
-    if minimized then
-        -- 1. 【Orionシーケンス】中身とトップバーを即座に殺す
-        contentWrapper.Visible = false
-        if sideBar then sideBar.Visible = false end
-        title.Visible = false
-        topBar.BackgroundTransparency = 1 -- バーの背景も消してアイコンだけにする
-        
-        -- 2. 枠を「円形アイコン」まで一気に凝縮
-        tw(main, { 
-            Size = iconSize,
-            BackgroundColor3 = T.ACCENT -- 最小化時は琥珀色に発光
-        }, 0.5, style)
-        
-        -- 3. 角を丸めて完全に「円」にする
-        tw(main:FindFirstChildOfClass("UICorner"), { CornerRadius = UDim.new(0, 22) })
-        
-        -- 4. ボタンをアイコンの中央に配置
-        btnArea.Position = UDim2.new(0, 0, 0, 0)
-        btnArea.Size = UDim2.new(1, 0, 1, 0)
-        closeBtn.Visible = false
-        minimizeBtn.Size = UDim2.new(1, 0, 1, 0)
-        minimizeBtn.Text = "🌙" -- Orionっぽくロゴ化
-    else
-        -- 復元
-        tw(main, { 
-            Size = originalSize,
-            BackgroundColor3 = T.BG_MAIN 
-        }, 0.5, style)
-        
-        tw(main:FindFirstChildOfClass("UICorner"), { CornerRadius = UDim.new(0, 12) })
-        
-        topBar.BackgroundTransparency = 0
-        title.Visible = true
-        contentWrapper.Visible = true
-        if sideBar then sideBar.Visible = true end
-        
-        -- ボタン配置を戻す
-        btnArea.Position = UDim2.new(1, -68, 0, 0)
-        btnArea.Size = UDim2.new(0, 64, 1, 0)
-        closeBtn.Visible = true
-        minimizeBtn.Size = UDim2.new(0, 28, 1, 0)
-        minimizeBtn.Text = "─"
-        
-        task.delay(0.5, function() main.ClipsDescendants = false end)
-    end
-end)
+        -- 最小化ボタン
+        local minimizeBtn = make("TextButton", {
+            Text = "─", TextSize = 14, Font = Enum.Font.GothamBold,
+            TextColor3 = T.TEXT_M, BackgroundTransparency = 1,
+            Size = UDim2.new(0, 28, 1, 0), Position = UDim2.new(0, 0, 0, 0),
+            AutoButtonColor = false, ZIndex = 5,
+        }, btnArea)
 
--- 閉じるボタン（ここはそのまま）
-local closeBtn = make("TextButton", {
-    Text = "✕", TextSize = 13, Font = Enum.Font.GothamBold,
-    TextColor3 = T.TEXT_M, BackgroundTransparency = 1,
-    Size = UDim2.new(0, 28, 1, 0), Position = UDim2.new(0, 30, 0, 0),
-    AutoButtonColor = false, ZIndex = 5,
-}, btnArea)
+        minimizeBtn.MouseEnter:Connect(function() tw(minimizeBtn, {TextColor3 = Color3.fromRGB(254, 188, 46)}) end)
+        minimizeBtn.MouseLeave:Connect(function() tw(minimizeBtn, {TextColor3 = T.TEXT_M}) end)
+
+        minimizeBtn.MouseButton1Click:Connect(function()
+            minimized = not minimized
+            
+            -- はみ出し防止を強制
+            main.ClipsDescendants = true
+            
+            if minimized then
+                -- 【凝縮】中身を消して、枠をトップバーサイズまで絞る
+                contentWrapper.Visible = false
+                if sideBar then sideBar.Visible = false end
+                title.Visible = false -- タイトルも消すとスッキリする
+                
+                twWait(main, { 
+                    Size = minSize,
+                    BackgroundColor3 = T.BG_TOPBAR 
+                }, TW_MED)
+                
+                -- ボタン位置を微調整
+                btnArea.Position = UDim2.new(1, -64, 0, 0)
+            else
+                -- 【復元】
+                twWait(main, { 
+                    Size = originalSize, -- CreateWindowで決めた元のScaleサイズ
+                    BackgroundColor3 = T.BG_MAIN 
+                }, TW_MED)
+                
+                contentWrapper.Visible = true
+                if sideBar then sideBar.Visible = true end
+                title.Visible = true
+                
+                btnArea.Position = UDim2.new(1, -68, 0, 0)
+                main.ClipsDescendants = false
+            end
+        end)
+
+        -- 閉じるボタン
+        local closeBtn = make("TextButton", {
+            Text = "✕", TextSize = 13, Font = Enum.Font.GothamBold,
+            TextColor3 = T.TEXT_M, BackgroundTransparency = 1,
+            Size = UDim2.new(0, 28, 1, 0), Position = UDim2.new(0, 30, 0, 0),
+            AutoButtonColor = false, ZIndex = 5,
+        }, btnArea)
 
         closeBtn.MouseEnter:Connect(function() tw(closeBtn, {TextColor3 = Color3.fromRGB(255, 95, 87)}) end)
         closeBtn.MouseLeave:Connect(function() tw(closeBtn, {TextColor3 = T.TEXT_M}) end)
